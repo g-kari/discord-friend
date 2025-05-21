@@ -61,6 +61,20 @@ This document provides instructions for testing the MCP server auto-join functio
 **Expected Result:**
 - Bot should respond with a list of servers and channels in the auto-join list
 
+#### /remove_mcp_server Command
+
+**Steps:**
+1. Configure some MCP servers
+2. Execute `/remove_mcp_server` command (uses current server and channel)
+3. Execute `/remove_mcp_server server_name:"Server Name" channel_name:"Channel Name"` command
+4. Execute `/remove_mcp_server remove_from_config:true` command
+
+**Expected Result:**
+- First command should remove the current channel from the in-memory list
+- Second command should remove the specified channel from the specified server
+- Third command should remove the channel and update the .env file
+- Bot should confirm each action with a message
+
 ## Troubleshooting
 
 If the auto-join feature is not working as expected:

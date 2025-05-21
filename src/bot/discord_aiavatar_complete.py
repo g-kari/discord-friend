@@ -882,6 +882,88 @@ try:
                 f"MCPサーバーリストの取得中にエラーが発生しました: {str(e)}"
             )
 
+    @bot.tree.command(
+        name="remove_mcp_server",
+        description="指定したサーバーのチャンネルをMCPサーバー（自動接続リスト）から削除します",
+    )
+    @app_commands.describe(
+        server_name="削除するサーバー名（空の場合は現在のサーバー）",
+        channel_name="削除するチャンネル名（空の場合は現在のチャンネル）",
+        remove_from_config="設定ファイルからも永続的に削除する場合はTrue"
+    )
+    async def remove_mcp_server(
+        interaction: discord.Interaction, 
+        server_name: str = None, 
+        channel_name: str = None, 
+        remove_from_config: bool = False
+    ):
+        if not interaction.guild:
+            await interaction.response.send_message("このコマンドはサーバー内でのみ使用できます。")
+            return
+            
+        try:
+            from config import MCP_SERVERS
+            from utils import env_manager
+            
+            # サーバー名とチャンネル名が指定されていない場合は現在のものを使用
+            guild_name = server_name or interaction.guild.name
+            
+            # チャンネル名が指定されていない場合は、ユーザーが現在参加しているチャンネルを使用
+            if not channel_name:
+                if not interaction.user.voice or not interaction.user.voice.channel:
+                    await interaction.response.send_message("チャンネル名を指定するか、ボイスチャンネルに参加してください。")
+                    return
+                channel_name = interaction.user.voice.channel.name
+            
+            # サーバーがリストに存在するか確認
+            if guild_name not in MCP_SERVERS:
+                await interaction.response.send_message(f"サーバー「{guild_name}」はMCPサーバーリストに存在しません。")
+                return
+                
+            # チャンネルがリストに存在するか確認
+            if channel_name not in MCP_SERVERS[guild_name]:
+                await interaction.response.send_message(
+                    f"チャンネル「{channel_name}」はサーバー「{guild_name}」のMCPサーバーリストに存在しません。"
+                )
+                return
+                
+            # メモリ上の設定から削除
+            MCP_SERVERS[guild_name].remove(channel_name)
+            
+            # サーバーのチャンネルリストが空になった場合、サーバー自体も削除
+            if not MCP_SERVERS[guild_name]:
+                del MCP_SERVERS[guild_name]
+                
+            logger.info(f"MCPサーバーリストから削除: サーバー「{guild_name}」 チャンネル「{channel_name}」")
+            
+            # 設定ファイルからも永続的に削除（オプション）
+            if remove_from_config:
+                result = env_manager.update_env_variable(
+                    key='MCP_SERVERS',
+                    value=MCP_SERVERS,
+                    json_encode=True
+                )
+                
+                if result:
+                    logger.info(f"MCPサーバー設定を.envファイルに保存しました")
+                    await interaction.response.send_message(
+                        f"チャンネル「{channel_name}」をサーバー「{guild_name}」のMCPサーバーリストから削除し、設定ファイルに永続的に保存しました。"
+                    )
+                else:
+                    logger.warning("MCPサーバー設定を保存する.envファイルが見つからないか、更新できませんでした")
+                    await interaction.response.send_message(
+                        f"チャンネル「{channel_name}」をサーバー「{guild_name}」のMCPサーバーリストから削除しましたが、設定ファイルが見つからないため永続的に保存できませんでした。"
+                    )
+            else:
+                await interaction.response.send_message(
+                    f"チャンネル「{channel_name}」をサーバー「{guild_name}」のMCPサーバーリストから一時的に削除しました。ボット再起動後にリセットされます。"
+                )
+        except Exception as e:
+            logger.error(f"MCPサーバー削除中にエラーが発生しました: {e}")
+            await interaction.response.send_message(
+                f"MCPサーバーの削除中にエラーが発生しました: {str(e)}"
+            )
+
     # 会話開始ボタン
     @bot.tree.command(
         name="talk",
