@@ -2,12 +2,12 @@ name: Python Tests
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
     paths:
       - '**.py'
       - 'src/bot/requirements.txt'
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
     paths:
       - '**.py'
       - 'src/bot/requirements.txt'
