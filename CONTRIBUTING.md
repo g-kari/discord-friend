@@ -40,7 +40,7 @@ If you prefer to develop locally:
 
 ## Development Workflow
 
-1. Create a feature branch from `master`
+1. Create a feature branch from `main`
 2. Make your changes
 3. Run linting and tests:
    ```bash
