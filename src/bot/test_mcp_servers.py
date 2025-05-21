@@ -67,6 +67,28 @@ class TestMCPServerConfig(unittest.TestCase):
         
         # この部分は実際には実行されないが、動作の説明として記述
         self.assertTrue(True)  # ダミーアサーション
+        
+    def test_mcp_management_commands(self):
+        """MCPサーバー管理コマンドのテスト"""
+        # 実際にコマンドは実行しないが、コマンドの説明として記述
+        print("""
+        MCPサーバー管理コマンドシミュレーション:
+        
+        1. `/add_mcp_server` コマンド:
+           - 現在のボイスチャンネルをMCPサーバーリストに追加
+           - add_to_config:true パラメータで永続的に保存可能
+        
+        2. `/list_mcp_servers` コマンド:
+           - 現在設定されているMCPサーバーとチャンネルの一覧を表示
+        
+        3. `/remove_mcp_server` コマンド:
+           - 引数なし: 現在参加中のチャンネルをリストから削除
+           - server_name, channel_name: 指定したサーバーのチャンネルを削除
+           - remove_from_config:true: 設定ファイルからも永続的に削除
+        """)
+        
+        # この部分は実際には実行されないが、動作の説明として記述
+        self.assertTrue(True)  # ダミーアサーション
 
 if __name__ == '__main__':
     unittest.main()

@@ -9,4 +9,8 @@ DIFY_API_URL=https://api.dify.ai/v1
 AIVISSPEECH_API_URL=http://localhost:50021
 
 # OpenAI API設定（STTに使用）
-OPENAI_API_KEY=your_openai_api_key_here 
+OPENAI_API_KEY=your_openai_api_key_here
+
+# MCPサーバー自動接続設定 (JSONフォーマット)
+# 例: {"サーバー名": ["チャンネル名1", "チャンネル名2"]}
+MCP_SERVERS={"Discord Server Name": ["Voice Channel 1", "Voice Channel 2"]}

@@ -4,6 +4,10 @@
 import os
 import json
 import dotenv
+import logging
+
+# ロガーの設定
+logger = logging.getLogger(__name__)
 
 # 環境変数のロード
 dotenv.load_dotenv()
