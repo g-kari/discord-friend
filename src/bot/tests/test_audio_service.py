@@ -3,6 +3,11 @@ from unittest.mock import patch, MagicMock, mock_open, call
 import numpy as np
 import os
 import tempfile
+import sys
+
+# Import the module to check for availability before running specific tests
+import src.bot.services.audio_service
+HAS_SOUNDDEVICE = src.bot.services.audio_service.sd is not None
 
 # Assuming audio_service.py is in src.bot.services
 from src.bot.services.audio_service import record_with_silence_detection, cleanup_audio_files
@@ -42,6 +47,23 @@ class TestAudioService(unittest.TestCase):
         mock_os_path_exists.assert_not_called()
         mock_os_remove.assert_not_called()
 
+    @patch('src.bot.services.audio_service.os.path.exists')
+    @patch('src.bot.services.audio_service.os.remove')
+    def test_cleanup_audio_files_none(self, mock_os_remove, mock_os_path_exists):
+        # Test with None as input
+        cleanup_audio_files(None)
+        
+        mock_os_path_exists.assert_not_called()
+        mock_os_remove.assert_not_called()
+
+    # Test that returns None when sounddevice is not available
+    @unittest.skipIf(not HAS_SOUNDDEVICE, "sounddevice not available")
+    @patch('src.bot.services.audio_service.sd', None)  # Force sd to be None for this test
+    def test_record_with_silence_detection_no_sounddevice(self):
+        result = record_with_silence_detection()
+        self.assertIsNone(result)
+
+    @unittest.skipIf(not HAS_SOUNDDEVICE, "sounddevice not available")
     @patch('src.bot.services.audio_service.tempfile.NamedTemporaryFile')
     @patch('src.bot.services.audio_service.sf.write')
     @patch('src.bot.services.audio_service.sd.InputStream')
@@ -104,6 +126,7 @@ class TestAudioService(unittest.TestCase):
         self.assertGreaterEqual(len(args[1]), (5 * samplerate) - blocksize) # Allow for one block less due to timing
         self.assertLessEqual(len(args[1]), 5 * samplerate + blocksize) # Allow for one block more
 
+    @unittest.skipIf(not HAS_SOUNDDEVICE, "sounddevice not available")
     @patch('src.bot.services.audio_service.tempfile.NamedTemporaryFile')
     @patch('src.bot.services.audio_service.sf.write')
     @patch('src.bot.services.audio_service.sd.InputStream')

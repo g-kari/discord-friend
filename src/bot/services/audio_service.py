@@ -1,16 +1,30 @@
 """
 音声録音と処理に関するモジュール
 """
-import config
 import os
 import sys
-import sounddevice as sd
+import tempfile
 import numpy as np
 import soundfile as sf
-import tempfile
+import logging
 
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import config after setting path
+from src.bot import config
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+# Conditionally import sounddevice to handle missing package in test environments
+try:
+    import sounddevice as sd
+    sounddevice_import_error = None
+except ImportError as e:
+    logger.warning(f"sounddevice import error: {e}")
+    sounddevice_import_error = e
+    sd = None
 
 
 def record_with_silence_detection(filename=None,
@@ -29,8 +43,13 @@ def record_with_silence_detection(filename=None,
         samplerate: サンプリングレート
 
     Returns:
-        録音ファイルのパス
+        録音ファイルのパス、または録音ができない場合はNone
     """
+    # Check if sounddevice is available
+    if sd is None:
+        logger.error(f"sounddeviceがインポートできないため録音できません: {sounddevice_import_error}")
+        return None
+        
     # ファイル名が指定されていない場合は一時ファイルを作成
     temp_file = None
     if not filename:
@@ -38,30 +57,40 @@ def record_with_silence_detection(filename=None,
         filename = temp_file.name
         temp_file.close()
 
-    print(f"録音開始... {filename}")
-    frames = []
-    silence_count = 0
-    blocksize = int(samplerate * 0.1)  # 0.1秒ごと
-    stream = sd.InputStream(samplerate=samplerate,
-                            channels=1, dtype='float32', blocksize=blocksize)
+    try:
+        logger.info(f"録音開始... {filename}")
+        frames = []
+        silence_count = 0
+        blocksize = int(samplerate * 0.1)  # 0.1秒ごと
+        stream = sd.InputStream(samplerate=samplerate,
+                                channels=1, dtype='float32', blocksize=blocksize)
 
-    with stream:
-        for _ in range(int(max_duration / 0.1)):
-            data, _ = stream.read(blocksize)
-            frames.append(data)
-            volume = np.abs(data).mean()
-            if volume < silence_threshold:
-                silence_count += 1
-            else:
-                silence_count = 0
-            if silence_count * 0.1 > silence_duration:
-                break
+        with stream:
+            for _ in range(int(max_duration / 0.1)):
+                data, _ = stream.read(blocksize)
+                frames.append(data)
+                volume = np.abs(data).mean()
+                if volume < silence_threshold:
+                    silence_count += 1
+                else:
+                    silence_count = 0
+                if silence_count * 0.1 > silence_duration:
+                    break
 
-    audio = np.concatenate(frames, axis=0)
-    sf.write(filename, audio, samplerate)
-    print(f"録音終了: {filename}")
-
-    return filename
+        audio = np.concatenate(frames, axis=0)
+        sf.write(filename, audio, samplerate)
+        logger.info(f"録音終了: {filename}")
+        return filename
+        
+    except Exception as e:
+        logger.error(f"録音中にエラーが発生しました: {e}")
+        # Clean up the temporary file if recording failed
+        if temp_file and os.path.exists(filename):
+            try:
+                os.remove(filename)
+            except:
+                pass
+        return None
 
 
 def cleanup_audio_files(files):
@@ -71,10 +100,13 @@ def cleanup_audio_files(files):
     Args:
         files: 削除するファイルパスのリスト
     """
+    if files is None:
+        return
+        
     for file in files:
         try:
-            if os.path.exists(file):
+            if file and os.path.exists(file):
                 os.remove(file)
-                print(f"削除: {file}")
+                logger.info(f"削除: {file}")
         except Exception as e:
-            print(f"ファイル削除エラー {file}: {e}")
+            logger.error(f"ファイル削除エラー {file}: {e}")
