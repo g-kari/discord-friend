@@ -91,7 +91,7 @@ try:
 
     # データベース初期化
     def init_db():
-        global db_conn, DB_PATH
+        global db_conn
 
         # データベースファイルが存在し、サイズが0でない場合は削除
         if os.path.exists(DB_PATH) and os.path.getsize(DB_PATH) > 0:
@@ -161,7 +161,7 @@ try:
 
     # データベース接続を取得する関数
     def get_db_connection():
-        global db_conn, DB_PATH
+        global db_conn
 
         if db_conn is None:
             try:

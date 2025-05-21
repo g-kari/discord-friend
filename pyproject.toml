@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.black]
 line-length = 88
-target-version = ['py39']
+target-version = ['py312']
 include = '\.pyi?$'
 
 [tool.isort]
@@ -12,7 +12,7 @@ profile = "black"
 multi_line_output = 3
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
@@ -27,13 +27,13 @@ name = "discord-aiavatar"
 version = "1.0.0"
 description = "Discord bot with AI Avatar integration"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 license = {text = "MIT"}
 dependencies = [
     "aiavatar==0.7.2",
     "discord.py[voice]==2.3.2",
     "sounddevice==0.4.6",
-    "numpy>=2.2.3",
+    "numpy~=1.26.0",
     "soundfile==0.12.1",
     "python-dotenv==1.0.0",
     "sqlalchemy==2.0.23",

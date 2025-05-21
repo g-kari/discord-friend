@@ -103,10 +103,9 @@ def read_env_file(env_file: str) -> List[str]:
     try:
         with open(env_file, 'r', encoding='utf-8') as f:
             # Lock the file for reading
-            with file_lock(f):
-                lines = f.readlines()
-                logger.debug(f"Successfully read {len(lines)} lines from .env file")
-                return lines
+            lines = f.readlines()
+            logger.debug(f"Successfully read {len(lines)} lines from .env file")
+            return lines
     except IOError as e:
         logger.error(f"Error reading .env file: {e}")
         raise

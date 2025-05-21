@@ -1,12 +1,14 @@
 """
 Test the environment file manager utility.
 """
-import os
 import json
-import tempfile
+import os
 import sys
+import tempfile
+
 sys.path.append('/home/runner/work/discord-friend/discord-friend/src/bot')
 from utils import env_manager
+
 from src.bot.utils.logging_utils import setup_logger
 
 # ロガー設定

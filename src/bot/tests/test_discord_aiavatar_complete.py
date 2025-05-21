@@ -2,6 +2,8 @@ import unittest
 from unittest.mock import patch, MagicMock
 import sqlite3
 import os
+import discord
+from unittest.mock import AsyncMock
 
 # Import functions to be tested from the main script
 # We will patch DB_NAME before these imports happen in the actual test methods or setup
