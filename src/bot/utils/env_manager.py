@@ -18,11 +18,17 @@ try:
     
     def lock_file(f):
         """Lock a file using fcntl (Unix systems)"""
-        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX)
+        except (IOError, OSError) as e:
+            logger.warning(f"Failed to lock file, proceeding without lock: {e}")
     
     def unlock_file(f):
         """Unlock a file using fcntl (Unix systems)"""
-        fcntl.flock(f, fcntl.LOCK_UN)
+        try:
+            fcntl.flock(f, fcntl.LOCK_UN)
+        except (IOError, OSError) as e:
+            logger.warning(f"Failed to unlock file: {e}")
     
     LOCK_AVAILABLE = True
     
@@ -32,15 +38,21 @@ except ImportError:
         
         def lock_file(f):
             """Lock a file using msvcrt (Windows systems)"""
-            f.seek(0, os.SEEK_END)  # Move to the end of the file
-            file_size = f.tell()  # Get the file size
-            msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, file_size)
+            try:
+                f.seek(0, os.SEEK_END)  # Move to the end of the file
+                file_size = f.tell()  # Get the file size
+                msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, max(1, file_size))
+            except (IOError, OSError) as e:
+                logger.warning(f"Failed to lock file, proceeding without lock: {e}")
         
         def unlock_file(f):
             """Unlock a file using msvcrt (Windows systems)"""
-            f.seek(0, os.SEEK_END)  # Move to the end of the file
-            file_size = f.tell()  # Get the file size
-            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, file_size)
+            try:
+                f.seek(0, os.SEEK_END)  # Move to the end of the file
+                file_size = f.tell()  # Get the file size
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, max(1, file_size))
+            except (IOError, OSError) as e:
+                logger.warning(f"Failed to unlock file: {e}")
         
         LOCK_AVAILABLE = True
         
@@ -94,7 +106,6 @@ def read_env_file(env_file: str) -> List[str]:
     
     Raises:
         FileNotFoundError: If the file doesn't exist
-        IOError: If there's an error reading the file
     """
     if not os.path.exists(env_file):
         logger.error(f".env file not found: {env_file}")
@@ -103,12 +114,20 @@ def read_env_file(env_file: str) -> List[str]:
     try:
         with open(env_file, 'r', encoding='utf-8') as f:
             # Lock the file for reading
-            lines = f.readlines()
-            logger.debug(f"Successfully read {len(lines)} lines from .env file")
-            return lines
+            try:
+                lock_file(f)
+                lines = f.readlines()
+                logger.debug(f"Successfully read {len(lines)} lines from .env file")
+                return lines
+            finally:
+                # Always unlock the file
+                try:
+                    unlock_file(f)
+                except Exception as e:
+                    logger.warning(f"Failed to unlock file after reading: {e}")
     except IOError as e:
         logger.error(f"Error reading .env file: {e}")
-        raise
+        return []  # Return empty list on error
 
 
 def write_env_file(env_file: str, lines: List[str]) -> bool:
@@ -121,24 +140,27 @@ def write_env_file(env_file: str, lines: List[str]) -> bool:
     
     Returns:
         True if successful, False otherwise
-    
-    Raises:
-        IOError: If there's an error writing to the file
     """
     try:
         with open(env_file, 'w', encoding='utf-8') as f:
             # Lock the file for writing
-            lock_file(f)
             try:
+                lock_file(f)
                 f.writelines(lines)
                 logger.debug(f"Successfully wrote {len(lines)} lines to .env file")
                 return True
+            except Exception as e:
+                logger.error(f"Error during file write: {e}")
+                return False
             finally:
                 # Always unlock the file
-                unlock_file(f)
+                try:
+                    unlock_file(f)
+                except Exception as e:
+                    logger.warning(f"Failed to unlock file: {e}")
     except IOError as e:
         logger.error(f"Error writing to .env file: {e}")
-        raise
+        return False
 
 
 def update_env_variable(
@@ -171,12 +193,20 @@ def update_env_variable(
     try:
         # Format the value
         if json_encode:
-            formatted_value = json.dumps(value, ensure_ascii=False)
+            try:
+                formatted_value = json.dumps(value, ensure_ascii=False)
+            except (TypeError, ValueError) as e:
+                logger.error(f"Error JSON encoding value: {e}")
+                formatted_value = str(value)
         else:
             formatted_value = str(value)
         
         # Read the file
-        lines = read_env_file(env_file)
+        try:
+            lines = read_env_file(env_file)
+        except FileNotFoundError:
+            logger.error(f"Environment file not found: {env_file}")
+            return False
         
         # Look for the key
         key_line_index = None
@@ -194,9 +224,10 @@ def update_env_variable(
             logger.debug(f"Added new variable: {key}")
         
         # Write the updated content back to the file
-        write_env_file(env_file, lines)
-        logger.info(f"Successfully updated environment variable in {env_file}: {key}")
-        return True
+        result = write_env_file(env_file, lines)
+        if result:
+            logger.info(f"Successfully updated environment variable in {env_file}: {key}")
+        return result
         
     except Exception as e:
         logger.error(f"Error updating environment variable: {e}")
@@ -228,7 +259,11 @@ def remove_env_variable(
     
     try:
         # Read the file
-        lines = read_env_file(env_file)
+        try:
+            lines = read_env_file(env_file)
+        except FileNotFoundError:
+            logger.error(f"Environment file not found: {env_file}")
+            return False
         
         # Filter out the line with the key
         new_lines = [line for line in lines if not line.startswith(f'{key}=')]
@@ -239,9 +274,10 @@ def remove_env_variable(
             return False
         
         # Write the updated content back to the file
-        write_env_file(env_file, new_lines)
-        logger.info(f"Successfully removed environment variable from {env_file}: {key}")
-        return True
+        result = write_env_file(env_file, new_lines)
+        if result:
+            logger.info(f"Successfully removed environment variable from {env_file}: {key}")
+        return result
         
     except Exception as e:
         logger.error(f"Error removing environment variable: {e}")

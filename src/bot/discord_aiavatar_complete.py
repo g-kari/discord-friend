@@ -2,11 +2,9 @@ import discord
 from discord.ext import commands
 from discord import FFmpegPCMAudio
 from discord import app_commands
-from aiavatar import AIAvatar
 import asyncio
 import tempfile
 import os
-import sounddevice as sd
 import numpy as np
 import soundfile as sf
 import sqlite3
@@ -18,6 +16,21 @@ import time
 import traceback
 import logging
 from logging.handlers import RotatingFileHandler
+
+# Conditionally import dependencies to handle missing packages in test environments
+try:
+    from aiavatar import AIAvatar
+    aiavatar_import_error = None
+except ImportError as e:
+    aiavatar_import_error = e
+    AIAvatar = None
+
+try:
+    import sounddevice as sd
+    sounddevice_import_error = None
+except ImportError as e:
+    sounddevice_import_error = e
+    sd = None
 
 try:
     print("スクリプト開始")
@@ -510,17 +523,25 @@ try:
 
     print("AIAvatarKitを初期化しています...")
     # For CI/test environments, handle missing audio device gracefully
+    aiavatar = None
     try:
-        aiavatar = AIAvatar(
-            openai_api_key=OPENAI_API_KEY,
-        )
+        if AIAvatar is not None:
+            aiavatar = AIAvatar(
+                openai_api_key=OPENAI_API_KEY,
+            )
+        else:
+            print(f"AIAvatarがインポートできないため、初期化をスキップします: {aiavatar_import_error}")
+            # In test environment, don't exit
+            if "pytest" not in sys.modules:
+                logger.error(f"AIAvatarのインポートエラー: {aiavatar_import_error}")
     except Exception as e:
         print(f"エラーが発生しました: {e}")
         # Set to None but don't exit in test environments
         if "pytest" in sys.modules:
             aiavatar = None
         else:
-            sys.exit(1)
+            logger.error(f"AIAvatar初期化エラー: {e}")
+            logger.error(traceback.format_exc())
 
     # キーワード検出のキャッシュ
     last_transcribed = {}
@@ -535,6 +556,12 @@ try:
         username=None,
     ):
         logger.info(f"録音開始: ユーザー「{username}」")
+        
+        # Check if sounddevice is available
+        if sd is None:
+            logger.error(f"sounddeviceがインポートできないため録音できません: {sounddevice_import_error}")
+            return False
+            
         frames = []
         silence_count = 0
         max_volume = 0.0
