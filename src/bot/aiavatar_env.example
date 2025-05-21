@@ -1,0 +1,12 @@
+# Discord Bot設定
+DISCORD_BOT_TOKEN=your_discord_bot_token_here
+
+# Dify API設定
+DIFY_API_KEY=your_dify_api_key_here
+DIFY_API_URL=https://api.dify.ai/v1
+
+# AivisSpeech API設定
+AIVISSPEECH_API_URL=http://localhost:50021
+
+# OpenAI API設定（STTに使用）
+OPENAI_API_KEY=your_openai_api_key_here 

@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.pytest]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[project]
+name = "discord-aiavatar"
+version = "1.0.0"
+description = "Discord bot with AI Avatar integration"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dependencies = [
+    "aiavatar==0.7.2",
+    "discord.py[voice]==2.3.2",
+    "sounddevice==0.4.6",
+    "numpy>=2.2.3",
+    "soundfile==0.12.1",
+    "python-dotenv==1.0.0",
+    "sqlalchemy==2.0.23",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "flake8",
+    "isort",
+    "mypy",
+    "pytest",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/g-kari/discord-friends"
+"Bug Tracker" = "https://github.com/g-kari/discord-friends/issues"
