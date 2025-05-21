@@ -59,7 +59,7 @@ except ImportError:
         LOCK_AVAILABLE = False
 
 
-def find_env_file(search_paths: List[str] = None) -> Optional[str]:
+def find_env_file(search_paths: Optional[List[str]] = None) -> Optional[str]:
     """
     Find an environment file in the specified search paths.
     
@@ -144,8 +144,8 @@ def write_env_file(env_file: str, lines: List[str]) -> bool:
 def update_env_variable(
     key: str, 
     value: Any, 
-    env_file: str = None, 
-    search_paths: List[str] = None,
+    env_file: Optional[str] = None, 
+    search_paths: Optional[List[str]] = None,
     json_encode: bool = False
 ) -> bool:
     """
@@ -205,8 +205,8 @@ def update_env_variable(
 
 def remove_env_variable(
     key: str, 
-    env_file: str = None, 
-    search_paths: List[str] = None
+    env_file: Optional[str] = None, 
+    search_paths: Optional[List[str]] = None
 ) -> bool:
     """
     Remove an environment variable from the .env file.
