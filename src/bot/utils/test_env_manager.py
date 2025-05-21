@@ -12,6 +12,34 @@ from src.bot.utils.logging_utils import setup_logger
 # ロガー設定
 logger = setup_logger("test_env_manager")
 
+# Write our own implementation of read_env_file to avoid the file_lock issue
+def simple_read_env_file(file_path):
+    with open(file_path, 'r') as f:
+        return f.readlines()
+
+# Simple update function
+def simple_update_env_variable(key, value, file_path):
+    lines = simple_read_env_file(file_path)
+    updated = False
+    for i, line in enumerate(lines):
+        if line.startswith(f"{key}="):
+            lines[i] = f"{key}={value}\n"
+            updated = True
+            break
+    if not updated:
+        lines.append(f"{key}={value}\n")
+    with open(file_path, 'w') as f:
+        f.writelines(lines)
+    return True
+
+# Simple remove function
+def simple_remove_env_variable(key, file_path):
+    lines = simple_read_env_file(file_path)
+    new_lines = [line for line in lines if not line.startswith(f"{key}=")]
+    with open(file_path, 'w') as f:
+        f.writelines(new_lines)
+    return True
+
 def test_env_manager():
     """Test the environment file manager utility."""
     # Create a temporary .env file for testing
@@ -23,30 +51,10 @@ def test_env_manager():
     try:
         logger.info(f"Created test .env file: {test_env_file}")
         
-        # Write our own implementation of read_env_file to avoid the file_lock issue
-        def simple_read_env_file(file_path):
-            with open(file_path, 'r') as f:
-                return f.readlines()
-        
         # Test reading the env file
         lines = simple_read_env_file(test_env_file)
         assert len(lines) == 2
         logger.info("✓ Reading .env file works")
-        
-        # Simple update function
-        def simple_update_env_variable(key, value, file_path):
-            lines = simple_read_env_file(file_path)
-            updated = False
-            for i, line in enumerate(lines):
-                if line.startswith(f"{key}="):
-                    lines[i] = f"{key}={value}\n"
-                    updated = True
-                    break
-            if not updated:
-                lines.append(f"{key}={value}\n")
-            with open(file_path, 'w') as f:
-                f.writelines(lines)
-            return True
         
         # Test updating an existing variable
         result = simple_update_env_variable("TEST_KEY", "updated_value", test_env_file)
@@ -81,14 +89,6 @@ def test_env_manager():
         parsed_json = json.loads(json_str)
         assert parsed_json == test_dict
         logger.info("✓ JSON encoding works")
-        
-        # Simple remove function
-        def simple_remove_env_variable(key, file_path):
-            lines = simple_read_env_file(file_path)
-            new_lines = [line for line in lines if not line.startswith(f"{key}=")]
-            with open(file_path, 'w') as f:
-                f.writelines(new_lines)
-            return True
         
         # Test removing a variable
         result = simple_remove_env_variable("ANOTHER_KEY", test_env_file)
