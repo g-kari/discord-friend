@@ -4,10 +4,10 @@
 import os
 import json
 import dotenv
-import logging
+from src.bot.utils.logging_utils import setup_logger
 
-# ロガーの設定
-logger = logging.getLogger(__name__)
+# ロガー設定
+logger = setup_logger("config")
 
 # 環境変数のロード
 dotenv.load_dotenv()

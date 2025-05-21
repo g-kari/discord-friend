@@ -1,7 +1,11 @@
 import os
 import sys
+from src.bot.utils.logging_utils import setup_logger
 
-print("This is a test output")
-print(f"Python version: {sys.version}")
-print(f"Current directory: {os.getcwd()}")
-print("Test completed")
+# ロガー設定
+logger = setup_logger("test_output")
+
+logger.info("This is a test output")
+logger.info(f"Python version: {sys.version}")
+logger.info(f"Current directory: {os.getcwd()}")
+logger.info("Test completed")
