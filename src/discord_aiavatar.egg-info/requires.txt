@@ -1,0 +1,14 @@
+aiavatar==0.7.2
+discord.py[voice]==2.3.2
+sounddevice==0.4.6
+numpy~=1.26.0
+soundfile==0.12.1
+python-dotenv==1.0.0
+sqlalchemy==2.0.23
+
+[dev]
+black
+flake8
+isort
+mypy
+pytest
