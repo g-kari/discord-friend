@@ -1279,15 +1279,15 @@ try:
             for channel in vc.guild.text_channels:
                 if channel.permissions_for(vc.guild.me).send_messages:
                     text_channel = channel
-                    await channel.send(f"**{username}** の音声を聞いています...")
+                    await text_channel.send(f"**{username}** の音声を聞いています...")
                     logger.debug(
-                        f"録音開始通知をテキストチャンネル「{channel.name}」に送信しました"
+                        f"録音開始通知をテキストチャンネル「{text_channel.name}」に送信しました"
                     )
                     
                     # Idle avatar display
                     avatar = get_avatar()
                     await avatar.send_avatar_to_channel(
-                        channel,
+                        text_channel,
                         state=AVATAR_STATE_IDLE,
                         text="音声を聞いています..."
                     )
