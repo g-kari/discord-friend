@@ -1,5 +1,7 @@
 title: "Discord AI Voice Bot"
 description: "Documentation for Discord AI Voice Bot (Dify × AIAvatarKit × AivisSpeech)"
+baseurl: "/discord-friend" # The subpath of your site, e.g. /blog
+url: "https://g-kari.github.io" # The base hostname & protocol for your site
 remote_theme: just-the-docs/just-the-docs
 color_scheme: "light"
 plugins:
@@ -42,6 +44,6 @@ defaults:
       layout: "default"
   -
     scope:
-      path: "_features"
+      path: "features"
     values:
       layout: "default"
