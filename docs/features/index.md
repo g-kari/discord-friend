@@ -47,6 +47,7 @@ Discord AI Voice Botには、以下のような主要機能があります：
 - `!leave` - ボイスチャンネルから退出
 - `!set_prompt <プロンプト>` - AIのシステムプロンプトを設定
 - `!set_default_prompt <プロンプト>` - AIのデフォルトシステムプロンプトを設定（管理者のみ）
+- `!get_default_prompt` - 現在のデフォルトシステムプロンプトを表示
 - `!recording_on [キーワード]` - 録音をオンにし、オプションでキーワードを設定
 - `!recording_off` - 録音をオフにする（Botが反応しなくなる）
 - `!history_clear` - 会話履歴をクリア

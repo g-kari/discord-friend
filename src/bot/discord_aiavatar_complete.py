@@ -470,6 +470,12 @@ try:
                             )
                     else:
                         await message.channel.send("このコマンドは管理者のみ使用できます。")
+                # Check for get_default_prompt command
+                elif message.content.strip() == f"{self.command_prefix}get_default_prompt":
+                    prompt = get_default_system_prompt()
+                    await message.channel.send(
+                        f"現在のデフォルトシステムプロンプト：\n```{prompt}```"
+                    )
                 
                 return
 
@@ -1004,6 +1010,13 @@ try:
             await interaction.response.send_message(
                 "デフォルトのシステムプロンプト設定中にエラーが発生しました。"
             )
+    
+    @bot.tree.command(name="get_default_prompt", description="現在のデフォルトシステムプロンプトを表示します")
+    async def get_default_prompt(interaction: discord.Interaction):
+        prompt = get_default_system_prompt()
+        await interaction.response.send_message(
+            f"現在のデフォルトシステムプロンプト：\n```{prompt}```"
+        )
 
     @bot.tree.command(
         name="recording_on",
