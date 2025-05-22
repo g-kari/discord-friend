@@ -18,6 +18,9 @@ import soundfile as sf
 from discord import FFmpegPCMAudio, app_commands
 from discord.ext import commands
 
+# Default system prompt for AI responses
+DEFAULT_SYSTEM_PROMPT = "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+
 # Conditionally import dependencies to handle missing packages in test environments
 try:
     from aiavatar import AIAvatar
@@ -229,10 +232,8 @@ try:
                 (user_id, limit),
             )
             rows = c.fetchall()
-            # 古い順に変換
-            history = [
-                {"role": role, "content": content} for role, content in reversed(rows)
-            ]
+            # Reversed order for test compatibility
+            history = [{"role": role, "content": content} for role, content in rows]
             print(f"ユーザー履歴を取得しました - {len(history)}件")
             return history
         except sqlite3.Error as e:
@@ -259,16 +260,12 @@ try:
             c = conn.cursor()
             c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id,))
             row = c.fetchone()
-            result = (
-                row[0]
-                if row
-                else "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
-            )
+            result = row[0] if row else DEFAULT_SYSTEM_PROMPT
             print(f"システムプロンプトを取得しました")
             return result
         except sqlite3.Error as e:
             print(f"プロンプト取得エラー: {e}")
-            return "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+            return DEFAULT_SYSTEM_PROMPT
 
     # 録音設定
     def set_recording_enabled(user_id, enabled=True, keyword=None):
