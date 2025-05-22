@@ -63,7 +63,7 @@ src/bot/
 
 ## 開発ワークフロー
 
-詳細な開発環境のセットアップとワークフローについては、[貢献ガイド](../contributing.html)を参照してください。
+詳細な開発環境のセットアップとワークフローについては、[貢献ガイド](../contributing/)を参照してください。
 
 ## アーキテクチャ
 
@@ -134,6 +134,6 @@ PM2の設定は、リポジトリルートの `ecosystem.config.js` で定義さ
 
 ## その他の開発リソース
 
-- [MCPサーバー自動接続機能のテストガイド](../features/mcp-servers.html)
-- [セキュリティガイドライン](../security.html)
-- [貢献ガイド](../contributing.html)
+- [MCPサーバー自動接続機能のテストガイド](../features/mcp-servers/)
+- [セキュリティガイドライン](../security/)
+- [貢献ガイド](../contributing/)
