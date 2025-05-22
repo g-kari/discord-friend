@@ -1,11 +1,13 @@
 """
 データベース操作を行うモジュール
 """
-import config
-import sqlite3
-from datetime import datetime
+
 import os
+import sqlite3
 import sys
+from datetime import datetime
+
+import config
 
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,7 +21,8 @@ def init_db():
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     # 会話履歴テーブル
-    c.execute('''
+    c.execute(
+        """
     CREATE TABLE IF NOT EXISTS conversation_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -27,24 +30,29 @@ def init_db():
         content TEXT NOT NULL,
         timestamp DATETIME NOT NULL
     )
-    ''')
+    """
+    )
     # システムプロンプトテーブル
-    c.execute('''
+    c.execute(
+        """
     CREATE TABLE IF NOT EXISTS system_prompts (
         user_id INTEGER PRIMARY KEY,
         prompt TEXT NOT NULL,
         created_at DATETIME NOT NULL
     )
-    ''')
+    """
+    )
     # 録音設定テーブル
-    c.execute('''
+    c.execute(
+        """
     CREATE TABLE IF NOT EXISTS recording_settings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL UNIQUE,
         enabled BOOLEAN NOT NULL DEFAULT 1,
         keyword TEXT
     )
-    ''')
+    """
+    )
     conn.commit()
     conn.close()
 
@@ -62,7 +70,7 @@ def save_message(user_id, role, content):
     c = conn.cursor()
     c.execute(
         "INSERT INTO conversation_history (user_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
-        (user_id, role, content, datetime.now())
+        (user_id, role, content, datetime.now()),
     )
     conn.commit()
     conn.close()
@@ -83,13 +91,12 @@ def get_user_history(user_id, limit=10):
     c = conn.cursor()
     c.execute(
         "SELECT role, content FROM conversation_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
-        (user_id, limit)
+        (user_id, limit),
     )
     rows = c.fetchall()
     conn.close()
     # 古い順に変換
-    history = [{"role": role, "content": content}
-               for role, content in reversed(rows)]
+    history = [{"role": role, "content": content} for role, content in reversed(rows)]
     return history
 
 
@@ -119,7 +126,7 @@ def set_user_prompt(user_id, prompt):
     c = conn.cursor()
     c.execute(
         "INSERT OR REPLACE INTO system_prompts (user_id, prompt, created_at) VALUES (?, ?, ?)",
-        (user_id, prompt, datetime.now())
+        (user_id, prompt, datetime.now()),
     )
     conn.commit()
     conn.close()
@@ -140,7 +147,11 @@ def get_user_prompt(user_id):
     c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id,))
     row = c.fetchone()
     conn.close()
-    return row[0] if row else "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+    return (
+        row[0]
+        if row
+        else "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+    )
 
 
 def set_recording_enabled(user_id, enabled=True, keyword=None):
@@ -156,7 +167,7 @@ def set_recording_enabled(user_id, enabled=True, keyword=None):
     c = conn.cursor()
     c.execute(
         "INSERT OR REPLACE INTO recording_settings (user_id, enabled, keyword) VALUES (?, ?, ?)",
-        (user_id, enabled, keyword)
+        (user_id, enabled, keyword),
     )
     conn.commit()
     conn.close()
@@ -177,7 +188,8 @@ def get_recording_settings(user_id):
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute(
-        "SELECT enabled, keyword FROM recording_settings WHERE user_id = ?", (user_id,))
+        "SELECT enabled, keyword FROM recording_settings WHERE user_id = ?", (user_id,)
+    )
     row = c.fetchone()
     conn.close()
     if not row:

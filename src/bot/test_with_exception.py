@@ -1,5 +1,6 @@
 import sys
 import traceback
+
 from src.bot.utils.logging_utils import setup_logger
 
 # ロガー設定

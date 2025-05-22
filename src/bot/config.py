@@ -1,9 +1,12 @@
 """
 設定と環境変数を管理するモジュール
 """
-import os
+
 import json
+import os
+
 import dotenv
+
 from src.bot.utils.logging_utils import setup_logger
 
 # ロガー設定
@@ -42,4 +45,6 @@ if mcp_servers_env:
     try:
         MCP_SERVERS = json.loads(mcp_servers_env)
     except json.JSONDecodeError:
-        logger.error("警告: MCP_SERVERSの形式が正しくありません。JSONフォーマットで指定してください。")
+        logger.error(
+            "警告: MCP_SERVERSの形式が正しくありません。JSONフォーマットで指定してください。"
+        )
