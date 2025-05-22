@@ -1,12 +1,14 @@
 """
 音声録音と処理に関するモジュール
 """
+
+import logging
 import os
 import sys
 import tempfile
+
 import numpy as np
 import soundfile as sf
-import logging
 
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Conditionally import sounddevice to handle missing package in test environments
 try:
     import sounddevice as sd
+
     sounddevice_import_error = None
 except ImportError as e:
     logger.warning(f"sounddevice import error: {e}")
@@ -27,11 +30,13 @@ except ImportError as e:
     sd = None
 
 
-def record_with_silence_detection(filename=None,
-                                  max_duration=config.MAX_RECORDING_DURATION,
-                                  silence_threshold=config.SILENCE_THRESHOLD,
-                                  silence_duration=config.SILENCE_DURATION,
-                                  samplerate=config.SAMPLE_RATE):
+def record_with_silence_detection(
+    filename=None,
+    max_duration=config.MAX_RECORDING_DURATION,
+    silence_threshold=config.SILENCE_THRESHOLD,
+    silence_duration=config.SILENCE_DURATION,
+    samplerate=config.SAMPLE_RATE,
+):
     """
     無音検出付きの音声録音
 
@@ -47,9 +52,11 @@ def record_with_silence_detection(filename=None,
     """
     # Check if sounddevice is available
     if sd is None:
-        logger.error(f"sounddeviceがインポートできないため録音できません: {sounddevice_import_error}")
+        logger.error(
+            f"sounddeviceがインポートできないため録音できません: {sounddevice_import_error}"
+        )
         return None
-        
+
     # ファイル名が指定されていない場合は一時ファイルを作成
     temp_file = None
     if not filename:
@@ -62,8 +69,9 @@ def record_with_silence_detection(filename=None,
         frames = []
         silence_count = 0
         blocksize = int(samplerate * 0.1)  # 0.1秒ごと
-        stream = sd.InputStream(samplerate=samplerate,
-                                channels=1, dtype='float32', blocksize=blocksize)
+        stream = sd.InputStream(
+            samplerate=samplerate, channels=1, dtype="float32", blocksize=blocksize
+        )
 
         with stream:
             for _ in range(int(max_duration / 0.1)):
@@ -81,7 +89,7 @@ def record_with_silence_detection(filename=None,
         sf.write(filename, audio, samplerate)
         logger.info(f"録音終了: {filename}")
         return filename
-        
+
     except Exception as e:
         logger.error(f"録音中にエラーが発生しました: {e}")
         # Clean up the temporary file if recording failed
@@ -102,7 +110,7 @@ def cleanup_audio_files(files):
     """
     if files is None:
         return
-        
+
     for file in files:
         try:
             if file and os.path.exists(file):

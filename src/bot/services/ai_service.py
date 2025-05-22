@@ -1,9 +1,10 @@
 """
 AIAvatarKit連携のサービスモジュール
 """
+
+import logging
 import os
 import sys
-import logging
 
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,6 +26,7 @@ if "pytest" in sys.modules:
 else:
     try:
         from aiavatar import AIAvatar
+
         # AIAvatarKitのインスタンスを作成
         try:
             aiavatar = AIAvatar(
@@ -60,7 +62,7 @@ async def transcribe_audio(audio_file_path):
         if aiavatar is None:
             logger.warning("AIAvatar instance is None, returning empty string")
             return ""
-            
+
         with open(audio_file_path, "rb") as f:
             audio_bytes = f.read()
         text = await aiavatar.stt.transcribe(audio_bytes)
@@ -86,11 +88,9 @@ async def get_ai_response(text, history=None, system_prompt=None):
         if aiavatar is None:
             logger.warning("AIAvatar instance is None, returning mock response")
             return "これはテスト環境のためのモック応答です。"
-            
+
         response = await aiavatar.llm.chat(
-            text,
-            history=history or [],
-            system_prompt=system_prompt
+            text, history=history or [], system_prompt=system_prompt
         )
         return response
     except Exception as e:
@@ -112,7 +112,7 @@ async def text_to_speech(text):
         if aiavatar is None:
             logger.warning("AIAvatar instance is None, returning None")
             return None
-            
+
         tts_audio = await aiavatar.tts.speak(text)
         return tts_audio
     except Exception as e:
