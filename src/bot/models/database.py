@@ -42,6 +42,16 @@ def init_db():
     )
     """
     )
+    # デフォルトシステムプロンプトテーブル
+    c.execute(
+        """
+    CREATE TABLE IF NOT EXISTS default_system_prompt (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        prompt TEXT NOT NULL,
+        updated_at DATETIME NOT NULL
+    )
+    """
+    )
     # 録音設定テーブル
     c.execute(
         """
@@ -132,6 +142,49 @@ def set_user_prompt(user_id, prompt):
     conn.close()
 
 
+def set_default_system_prompt(prompt):
+    """
+    デフォルトのシステムプロンプトを設定
+
+    Args:
+        prompt: デフォルトのシステムプロンプト
+    
+    Returns:
+        成功した場合はTrue、失敗した場合はFalse
+    """
+    try:
+        conn = sqlite3.connect(config.DB_PATH)
+        c = conn.cursor()
+        c.execute(
+            "INSERT OR REPLACE INTO default_system_prompt (id, prompt, updated_at) VALUES (?, ?, ?)",
+            (1, prompt, datetime.now()),
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except sqlite3.Error:
+        return False
+
+
+def get_default_system_prompt():
+    """
+    デフォルトのシステムプロンプトを取得
+
+    Returns:
+        デフォルトのシステムプロンプト（なければハードコードされた値）
+    """
+    DEFAULT_SYSTEM_PROMPT = "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+    try:
+        conn = sqlite3.connect(config.DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT prompt FROM default_system_prompt WHERE id = 1")
+        row = c.fetchone()
+        conn.close()
+        return row[0] if row else DEFAULT_SYSTEM_PROMPT
+    except sqlite3.Error:
+        return DEFAULT_SYSTEM_PROMPT
+
+
 def get_user_prompt(user_id):
     """
     ユーザーのシステムプロンプトを取得
@@ -147,11 +200,12 @@ def get_user_prompt(user_id):
     c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id,))
     row = c.fetchone()
     conn.close()
-    return (
-        row[0]
-        if row
-        else "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
-    )
+    
+    if row:
+        return row[0]  # ユーザー固有のプロンプトがある場合はそれを使用
+    
+    # ユーザー固有のプロンプトがない場合はデフォルトプロンプトを取得
+    return get_default_system_prompt()
 
 
 def set_recording_enabled(user_id, enabled=True, keyword=None):

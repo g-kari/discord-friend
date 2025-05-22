@@ -156,6 +156,16 @@ try:
             )
             """
             )
+            # デフォルトシステムプロンプトテーブル
+            c.execute(
+                """
+            CREATE TABLE IF NOT EXISTS default_system_prompt (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                prompt TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+            )
             # 録音設定テーブル
             c.execute(
                 """
@@ -254,15 +264,47 @@ try:
         except sqlite3.Error as e:
             print(f"プロンプト設定エラー: {e}")
 
+    def set_default_system_prompt(prompt):
+        try:
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute(
+                "INSERT OR REPLACE INTO default_system_prompt (id, prompt, updated_at) VALUES (?, ?, ?)",
+                (1, prompt, datetime_to_str(datetime.now())),
+            )
+            conn.commit()
+            print(f"デフォルトのシステムプロンプトを設定しました - {prompt}")
+            return True
+        except sqlite3.Error as e:
+            print(f"デフォルトプロンプト設定エラー: {e}")
+            return False
+
+    def get_default_system_prompt():
+        try:
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT prompt FROM default_system_prompt WHERE id = 1")
+            row = c.fetchone()
+            result = row[0] if row else DEFAULT_SYSTEM_PROMPT
+            print(f"デフォルトのシステムプロンプトを取得しました")
+            return result
+        except sqlite3.Error as e:
+            print(f"デフォルトプロンプト取得エラー: {e}")
+            return DEFAULT_SYSTEM_PROMPT
+    
     def get_user_prompt(user_id):
         try:
             conn = get_db_connection()
             c = conn.cursor()
             c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id,))
             row = c.fetchone()
-            result = row[0] if row else DEFAULT_SYSTEM_PROMPT
+            if row:
+                return row[0]  # ユーザー固有のプロンプトがある場合はそれを使用
+            
+            # ユーザー固有のプロンプトがない場合はデフォルトプロンプトを使用
+            default_prompt = get_default_system_prompt()
             print(f"システムプロンプトを取得しました")
-            return result
+            return default_prompt
         except sqlite3.Error as e:
             print(f"プロンプト取得エラー: {e}")
             return DEFAULT_SYSTEM_PROMPT
@@ -412,6 +454,23 @@ try:
                 # Let the command system handle this.
                 # If you also want to process commands here for some reason, remove this check.
                 # However, usually, commands are handled by their own decorators.
+                
+                # Special case for set_default_prompt text command (needs to be here to handle admin permissions)
+                if message.content.startswith(f"{self.command_prefix}set_default_prompt "):
+                    # Check if the user is an admin
+                    if isinstance(message.author, discord.Member) and message.author.guild_permissions.administrator:
+                        prompt = message.content[len(f"{self.command_prefix}set_default_prompt "):]
+                        if set_default_system_prompt(prompt):
+                            await message.channel.send(
+                                f"デフォルトのシステムプロンプトを設定しました。\n```{prompt}```"
+                            )
+                        else:
+                            await message.channel.send(
+                                "デフォルトのシステムプロンプト設定中にエラーが発生しました。"
+                            )
+                    else:
+                        await message.channel.send("このコマンドは管理者のみ使用できます。")
+                
                 return
 
             if not message.guild:
@@ -932,6 +991,19 @@ try:
         await interaction.response.send_message(
             f"システムプロンプトを設定しました。\n```{prompt}```"
         )
+
+    @bot.tree.command(name="set_default_prompt", description="AIのデフォルトシステムプロンプトを設定します（管理者のみ）")
+    @app_commands.describe(prompt="デフォルトのシステムプロンプト")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_default_prompt(interaction: discord.Interaction, prompt: str):
+        if set_default_system_prompt(prompt):
+            await interaction.response.send_message(
+                f"デフォルトのシステムプロンプトを設定しました。\n```{prompt}```"
+            )
+        else:
+            await interaction.response.send_message(
+                "デフォルトのシステムプロンプト設定中にエラーが発生しました。"
+            )
 
     @bot.tree.command(
         name="recording_on",
