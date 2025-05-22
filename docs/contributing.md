@@ -56,7 +56,10 @@ Discord AI Voice Botへの貢献方法
 2. 変更を加える
 3. リンティングとテストを実行：
    ```bash
-   # リンティング
+   # 自動リンティングと修正、コミット
+   ./scripts/lint_and_fix.sh --dir=src/
+   
+   # または個別にリンターを実行
    black src/
    isort src/
    flake8 src/
