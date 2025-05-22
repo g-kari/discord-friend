@@ -9,13 +9,13 @@ import time
 import traceback
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from typing import Optional
+from typing import Optional, cast
 
 import discord
 import dotenv
 import numpy as np
 import soundfile as sf
-from discord import FFmpegPCMAudio, app_commands
+from discord import FFmpegPCMAudio, VoiceClient, app_commands
 from discord.ext import commands
 
 # Default system prompt for AI responses
@@ -405,7 +405,7 @@ try:
 
             # This check is for traditional prefix commands.
             # The bot uses "!" as a prefix.
-            if message.content.startswith(self.command_prefix):
+            if isinstance(message.content, str) and isinstance(self.command_prefix, str) and message.content.startswith(self.command_prefix):
                 logger.debug(
                     f"Message starts with command prefix '{self.command_prefix}', ignoring for on_message handler."
                 )
@@ -423,11 +423,11 @@ try:
             # Check if the bot is connected to a voice channel in the message's guild
             voice_client_in_guild = None
             for vc in self.voice_clients:
-                if vc.guild == message.guild:
+                if isinstance(vc, VoiceClient) and vc.guild == message.guild:
                     voice_client_in_guild = vc
                     break
 
-            if voice_client_in_guild and voice_client_in_guild.is_connected():
+            if voice_client_in_guild and isinstance(voice_client_in_guild, VoiceClient) and voice_client_in_guild.is_connected():
                 logger.info(
                     f"Bot is in a voice channel in guild '{message.guild.name}'. Processing message from '{message.author.name}': '{message.content}'"
                 )
@@ -482,29 +482,41 @@ try:
 
                         # Send the AI's textual response back to the channel
                         try:
+                            channel_name = "unknown"
+                            if isinstance(message.channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
+                                channel_name = message.channel.name
                             logger.info(
-                                f'Sending AI response to channel {message.channel.name} for user {username}: "{ai_response[:50]}..."'
+                                f'Sending AI response to channel {channel_name} for user {username}: "{ai_response[:50]}..."'
                             )
                             await message.channel.send(ai_response)
+                            if isinstance(message.channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
+                                channel_name = message.channel.name
                             logger.debug(
-                                f"Successfully sent AI response to channel {message.channel.name} for {username}."
+                                f"Successfully sent AI response to channel {channel_name} for {username}."
                             )
                         except discord.DiscordException as e:
+                            channel_name = "unknown"
+                            if isinstance(message.channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
+                                channel_name = message.channel.name
                             logger.error(
-                                f"Failed to send AI response to channel {message.channel.name} for {username}: {e}"
+                                f"Failed to send AI response to channel {channel_name} for {username}: {e}"
                             )
                             logger.debug(traceback.format_exc())
                         except (
                             Exception
                         ) as e:  # Catch any other unexpected errors during send
+                            channel_name = "unknown"
+                            if isinstance(message.channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
+                                channel_name = message.channel.name
                             logger.error(
-                                f"Unexpected error sending AI response to channel {message.channel.name} for {username}: {e}"
+                                f"Unexpected error sending AI response to channel {channel_name} for {username}: {e}"
                             )
                             logger.debug(traceback.format_exc())
 
                         # --- TTS and Audio Playback ---
                         if (
                             voice_client_in_guild
+                            and isinstance(voice_client_in_guild, VoiceClient)
                             and voice_client_in_guild.is_connected()
                             and ai_response
                         ):
@@ -543,7 +555,7 @@ try:
                                 )
 
                                 # 3. Play Audio
-                                if voice_client_in_guild.is_playing():
+                                if isinstance(voice_client_in_guild, VoiceClient) and voice_client_in_guild.is_playing():
                                     logger.warning(
                                         f"Voice client is currently playing audio for {username}. Stopping previous audio."
                                     )
@@ -553,14 +565,14 @@ try:
                                     )  # Short pause to allow stop to take effect
 
                                 logger.info(
-                                    f"Playing TTS audio for {username} in voice channel {voice_client_in_guild.channel.name}."
+                                    f"Playing TTS audio for {username} in voice channel {voice_client_in_guild.channel.name if hasattr(voice_client_in_guild.channel, 'name') else 'unknown'}."
                                 )
                                 voice_client_in_guild.play(
                                     FFmpegPCMAudio(tts_audio_path)
                                 )
 
                                 # Wait for playback to finish
-                                while voice_client_in_guild.is_playing():
+                                while isinstance(voice_client_in_guild, VoiceClient) and voice_client_in_guild.is_playing():
                                     await asyncio.sleep(0.1)
                                 logger.info(
                                     f"Finished playing TTS audio for {username}."
@@ -586,6 +598,7 @@ try:
                         else:
                             if not (
                                 voice_client_in_guild
+                                and isinstance(voice_client_in_guild, VoiceClient)
                                 and voice_client_in_guild.is_connected()
                             ):
                                 logger.debug(
@@ -850,20 +863,22 @@ try:
         description="ボイスチャンネルに参加して会話を開始します（音声会話・画面共有の両方に対応）",
     )
     async def join(interaction: discord.Interaction):
-        if interaction.user.voice:
+        if isinstance(interaction.user, discord.Member) and interaction.user.voice:
             channel = interaction.user.voice.channel
+            if channel is not None:  # Add null check for channel
+                # Discord音声ストリームを受信するためのシンクを準備
+                from services.discord_audio import DiscordAudioSink
 
-            # Discord音声ストリームを受信するためのシンクを準備
-            from services.discord_audio import DiscordAudioSink
+                audio_sink = DiscordAudioSink()
+                voice_client: discord.VoiceClient = await channel.connect()
 
-            audio_sink = DiscordAudioSink()
-            voice_client = await channel.connect()
+                # 音声受信を開始（リッスンモード）
+                if hasattr(voice_client, 'listen'):  # Type check
+                    voice_client.listen(audio_sink)  # type: ignore
+                    setattr(voice_client, 'sink', audio_sink)  # Use setattr instead of direct assignment
 
-            # 音声受信を開始（リッスンモード）
-            voice_client.listen(audio_sink)
-            voice_client.sink = audio_sink  # 参照を保持
-
-            logger.info(f"ボイスチャンネル「{channel.name}」で音声受信を開始しました")
+                channel_name = channel.name if hasattr(channel, 'name') else "unknown"
+                logger.info(f"ボイスチャンネル「{channel_name}」で音声受信を開始しました")
 
             # チャンネル参加時に自動的に録音設定をオンに
             set_recording_enabled(interaction.user.id, True)
@@ -872,12 +887,13 @@ try:
             )
 
             # チャンネル内の全ユーザーの録音設定をオンに
-            for member in channel.members:
-                if not member.bot:  # ボットは除外
-                    set_recording_enabled(member.id, True)
-                    logger.info(
-                        f"チャンネル内のユーザー「{member.display_name}」の録音設定をオンにしました"
-                    )
+            if channel is not None and hasattr(channel, 'members'):
+                for member in channel.members:
+                    if not member.bot:  # ボットは除外
+                        set_recording_enabled(member.id, True)
+                        logger.info(
+                            f"チャンネル内のユーザー「{member.display_name}」の録音設定をオンにしました"
+                        )
 
             await interaction.response.send_message(
                 "ボイスチャンネルに参加しました。会話を開始します。話してみてください。画面共有にも対応しています。"
@@ -893,17 +909,18 @@ try:
     @bot.tree.command(name="leave", description="ボイスチャンネルから退出します")
     async def leave(interaction: discord.Interaction):
         for vc in bot.voice_clients:
-            if vc.guild == interaction.guild:
+            if isinstance(vc, VoiceClient) and vc.guild == interaction.guild:
                 # 音声シンクをクリーンアップ
                 if hasattr(vc, "sink") and vc.sink:
                     try:
                         vc.sink.cleanup()
-                        vc.stop_listening()
+                        if hasattr(vc, "stop_listening"):
+                            vc.stop_listening()  # type: ignore
                         logger.info("音声シンクをクリーンアップしました")
                     except Exception as e:
                         logger.error(f"音声シンククリーンアップエラー: {e}")
 
-                await vc.disconnect()
+                await vc.disconnect(force=True)
                 await interaction.response.send_message("退出しました。")
                 return
         await interaction.response.send_message("ボイスチャンネルにいません。")
@@ -973,7 +990,7 @@ try:
             )
             return
 
-        if not interaction.user.voice or not interaction.user.voice.channel:
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.voice or not interaction.user.voice.channel:
             await interaction.response.send_message(
                 "先にボイスチャンネルに参加してください。"
             )
@@ -984,7 +1001,9 @@ try:
             from utils import env_manager
 
             guild_name = interaction.guild.name
-            channel_name = interaction.user.voice.channel.name
+            channel_name = ""
+            if isinstance(interaction.user, discord.Member) and interaction.user.voice and interaction.user.voice.channel:
+                channel_name = interaction.user.voice.channel.name
 
             # メモリ上の設定を更新
             if guild_name not in MCP_SERVERS:
@@ -1084,7 +1103,7 @@ try:
 
             # チャンネル名が指定されていない場合は、ユーザーが現在参加しているチャンネルを使用
             if not channel_name:
-                if not interaction.user.voice or not interaction.user.voice.channel:
+                if not isinstance(interaction.user, discord.Member) or not interaction.user.voice or not interaction.user.voice.channel:
                     await interaction.response.send_message(
                         "チャンネル名を指定するか、ボイスチャンネルに参加してください。"
                     )
@@ -1157,7 +1176,7 @@ try:
             return
 
         # ユーザーがボイスチャンネルにいるか確認
-        if not interaction.user.voice or not interaction.user.voice.channel:
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.voice or not interaction.user.voice.channel:
             await interaction.response.send_message(
                 "ボイスチャンネルに接続してから使用してください。"
             )
@@ -1166,7 +1185,7 @@ try:
         # ボットが同じボイスチャンネルにいるか確認
         voice_client = None
         for vc in bot.voice_clients:
-            if vc.guild.id == interaction.guild.id:
+            if isinstance(vc, VoiceClient) and vc.guild.id == interaction.guild.id:
                 voice_client = vc
                 break
 
@@ -1176,20 +1195,22 @@ try:
             )
             return
 
-        if voice_client.channel != interaction.user.voice.channel:
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.voice or voice_client.channel != interaction.user.voice.channel:
             await interaction.response.send_message(
                 "ボットと同じボイスチャンネルに接続してください。"
             )
             return
 
         # 音声シンクが設定されていなければ設定
-        if not hasattr(voice_client, "sink") or not voice_client.sink:
-            from services.discord_audio import DiscordAudioSink
+        if isinstance(voice_client, VoiceClient):
+            if not hasattr(voice_client, "sink") or not voice_client.sink:
+                from services.discord_audio import DiscordAudioSink
 
-            audio_sink = DiscordAudioSink()
-            voice_client.listen(audio_sink)
-            voice_client.sink = audio_sink
-            logger.info(f"ボイスクライアントに音声シンクを設定しました")
+                audio_sink = DiscordAudioSink()
+                if hasattr(voice_client, 'listen'):
+                    voice_client.listen(audio_sink)  # type: ignore
+                    setattr(voice_client, 'sink', audio_sink)  # Use setattr instead of direct assignment
+                logger.info(f"ボイスクライアントに音声シンクを設定しました")
 
         await interaction.response.send_message(
             "会話を開始します。話してみてください。画面共有にも対応しています。"
@@ -1213,17 +1234,19 @@ try:
         logger.info(f"会話トリガー: ユーザー「{username}」(ID: {user_id})")
 
         # 音声シンクがない場合は設定
-        if not hasattr(vc, "sink") or not vc.sink:
-            from services.discord_audio import DiscordAudioSink
+        if isinstance(vc, VoiceClient):
+            if not hasattr(vc, "sink") or not vc.sink:
+                from services.discord_audio import DiscordAudioSink
 
-            try:
-                audio_sink = DiscordAudioSink()
-                vc.listen(audio_sink)
-                vc.sink = audio_sink
-                logger.info(f"会話開始時に音声シンクを設定しました")
-            except Exception as e:
-                logger.error(f"音声シンク設定エラー: {e}")
-                return
+                try:
+                    audio_sink = DiscordAudioSink()
+                    if hasattr(vc, 'listen'):
+                        vc.listen(audio_sink)  # type: ignore
+                        setattr(vc, 'sink', audio_sink)  # Use setattr instead of direct assignment
+                    logger.info(f"会話開始時に音声シンクを設定しました")
+                except Exception as e:
+                    logger.error(f"音声シンク設定エラー: {e}")
+                    return
 
         enabled, keyword = get_recording_settings(user_id)
         if not enabled:
@@ -1445,7 +1468,10 @@ try:
         )
 
         logger.info("\nDiscord Botを起動します...")
-        bot.run(TOKEN)
+        if TOKEN:  # Add null check
+            bot.run(TOKEN)
+        else:
+            logger.error("Discord Botトークンが設定されていないため、起動できません。")
 
 except Exception as e:
     error_msg = f"エラーが発生しました: {e}\n{traceback.format_exc()}"

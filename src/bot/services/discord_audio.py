@@ -16,7 +16,7 @@ import soundfile as sf
 logger = logging.getLogger("aiavatar_bot")
 
 
-class DiscordAudioSink(discord.AudioSink):
+class DiscordAudioSink(discord.AudioSink):  # type: ignore
     """
     Discordの音声ストリームを受信・処理するためのオーディオシンク
     """
