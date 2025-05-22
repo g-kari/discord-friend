@@ -18,6 +18,9 @@ import soundfile as sf
 from discord import FFmpegPCMAudio, VoiceClient, app_commands
 from discord.ext import commands
 
+# Import our Live2D avatar service
+from services.avatar import get_avatar, AVATAR_STATE_IDLE, AVATAR_STATE_TALKING, AVATAR_STATE_THINKING
+
 # Default system prompt for AI responses
 DEFAULT_SYSTEM_PROMPT = "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
 
@@ -910,6 +913,20 @@ try:
     async def leave(interaction: discord.Interaction):
         for vc in bot.voice_clients:
             if isinstance(vc, VoiceClient) and vc.guild == interaction.guild:
+                # Send idle avatar before leaving
+                try:
+                    avatar = get_avatar()
+                    for channel in interaction.guild.text_channels:
+                        if channel.permissions_for(vc.guild.me).send_messages:
+                            await avatar.send_avatar_to_channel(
+                                channel,
+                                state=AVATAR_STATE_IDLE,
+                                text="さようなら！またね！"
+                            )
+                            break
+                except Exception as e:
+                    logger.error(f"退出時のアバター表示エラー: {e}")
+                
                 # 音声シンクをクリーンアップ
                 if hasattr(vc, "sink") and vc.sink:
                     try:
@@ -1256,13 +1273,23 @@ try:
             return
 
         # 録音前の通知（テキストチャンネルに）
+        text_channel = None
         try:
             # 最初のテキストチャンネルを取得
             for channel in vc.guild.text_channels:
                 if channel.permissions_for(vc.guild.me).send_messages:
+                    text_channel = channel
                     await channel.send(f"**{username}** の音声を聞いています...")
                     logger.debug(
                         f"録音開始通知をテキストチャンネル「{channel.name}」に送信しました"
+                    )
+                    
+                    # Idle avatar display
+                    avatar = get_avatar()
+                    await avatar.send_avatar_to_channel(
+                        channel,
+                        state=AVATAR_STATE_IDLE,
+                        text="音声を聞いています..."
                     )
                     break
         except Exception as e:
@@ -1368,6 +1395,16 @@ try:
 
             # LLM応答（システムプロンプトでカスタマイズ）
             logger.info(f"AI応答生成開始: ユーザー「{username}」の質問「{text}」")
+            
+            # Send "thinking" avatar if we have a text channel
+            if text_channel:
+                avatar = get_avatar()
+                await avatar.send_avatar_to_channel(
+                    text_channel,
+                    state=AVATAR_STATE_THINKING,
+                    text=f"「{text[:20]}...」について考えています..."
+                )
+                
             start_time = time.time()
             response = await aiavatar.llm.chat(
                 text, history=history, system_prompt=system_prompt
@@ -1411,6 +1448,15 @@ try:
                 await channel.send(
                     f"**{member.display_name}**: {text}\n**AI**: {response}"
                 )
+                
+                # Send "talking" avatar
+                avatar = get_avatar()
+                await avatar.send_avatar_to_channel(
+                    channel,
+                    state=AVATAR_STATE_TALKING,
+                    text=response[:50] + ("..." if len(response) > 50 else "")
+                )
+                
                 logger.info(
                     f"テキストチャンネル「{channel.name}」に会話内容を送信しました"
                 )
