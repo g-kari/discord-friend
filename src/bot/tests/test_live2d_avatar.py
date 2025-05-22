@@ -21,15 +21,13 @@ from services.avatar.live2d_service import (
 class TestLive2DAvatar(unittest.TestCase):
     def setUp(self):
         # Create a temporary directory for testing
-        self.test_dir = "/tmp/test_avatar"
-        os.makedirs(self.test_dir, exist_ok=True)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_dir = self.temp_dir.name
         self.avatar = Live2DAvatar(avatar_dir=self.test_dir)
 
     def tearDown(self):
-        # Clean up test files
-        for file in os.listdir(self.test_dir):
-            os.remove(os.path.join(self.test_dir, file))
-        os.rmdir(self.test_dir)
+        # Cleanup is handled automatically by TemporaryDirectory
+        self.temp_dir.cleanup()
 
     def test_render_avatar_returns_bytes(self):
         """Test that render_avatar returns bytes data"""
