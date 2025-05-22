@@ -18,8 +18,8 @@ import soundfile as sf
 from discord import FFmpegPCMAudio, VoiceClient, app_commands
 from discord.ext import commands
 
-# Default system prompt for AI responses
-DEFAULT_SYSTEM_PROMPT = "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+# Import config
+from src.bot import config
 
 # Conditionally import dependencies to handle missing packages in test environments
 try:
@@ -260,12 +260,12 @@ try:
             c = conn.cursor()
             c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id,))
             row = c.fetchone()
-            result = row[0] if row else DEFAULT_SYSTEM_PROMPT
+            result = row[0] if row else config.DEFAULT_SYSTEM_PROMPT
             print(f"システムプロンプトを取得しました")
             return result
         except sqlite3.Error as e:
             print(f"プロンプト取得エラー: {e}")
-            return DEFAULT_SYSTEM_PROMPT
+            return config.DEFAULT_SYSTEM_PROMPT
 
     # 録音設定
     def set_recording_enabled(user_id, enabled=True, keyword=None):
@@ -1218,6 +1218,49 @@ try:
 
         # 会話処理を開始
         await trigger_ai_conversation(voice_client, interaction.user)
+
+    @bot.tree.command(name="set_default_prompt", description="AIのデフォルトシステムプロンプトを設定します")
+    @app_commands.describe(prompt="AIのデフォルトシステムプロンプト", add_to_config="設定ファイルに永続的に追加する場合はTrue")
+    async def set_default_prompt(interaction: discord.Interaction, prompt: str, add_to_config: bool = False):
+        # 管理者権限チェック
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("このコマンドは管理者のみが実行できます。")
+            return
+
+        try:
+            # グローバル変数の更新
+            config.DEFAULT_SYSTEM_PROMPT = prompt
+            
+            # 設定ファイルに永続的に保存（オプション）
+            if add_to_config:
+                from utils import env_manager
+                
+                # 環境変数ファイルを更新
+                result = env_manager.update_env_variable(
+                    key="DEFAULT_SYSTEM_PROMPT", value=prompt
+                )
+                
+                if result:
+                    logger.info(f"デフォルトシステムプロンプトを.envファイルに保存しました")
+                    await interaction.response.send_message(
+                        f"デフォルトシステムプロンプトを設定し、設定ファイルに永続的に保存しました。\n```{prompt}```"
+                    )
+                else:
+                    logger.warning(
+                        "デフォルトシステムプロンプトを保存する.envファイルが見つからないか、更新できませんでした"
+                    )
+                    await interaction.response.send_message(
+                        f"デフォルトシステムプロンプトを一時的に設定しましたが、設定ファイルが見つからないため永続的に保存できませんでした。\n```{prompt}```"
+                    )
+            else:
+                await interaction.response.send_message(
+                    f"デフォルトシステムプロンプトを一時的に設定しました。ボット再起動後にリセットされます。\n```{prompt}```"
+                )
+        except Exception as e:
+            logger.error(f"デフォルトシステムプロンプト設定中にエラーが発生しました: {e}")
+            await interaction.response.send_message(
+                f"デフォルトシステムプロンプトの設定中にエラーが発生しました: {str(e)}"
+            )
 
     async def trigger_ai_conversation(vc, member):
         """

@@ -150,7 +150,7 @@ def get_user_prompt(user_id):
     return (
         row[0]
         if row
-        else "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+        else config.DEFAULT_SYSTEM_PROMPT
     )
 
 
