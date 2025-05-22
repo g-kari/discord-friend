@@ -1442,24 +1442,22 @@ try:
 
             # 通知
             try:
-                channel = vc.channel.guild.text_channels[
-                    0
-                ]  # 最初のテキストチャンネルに通知
-                await channel.send(
-                    f"**{member.display_name}**: {text}\n**AI**: {response}"
-                )
-                
-                # Send "talking" avatar
-                avatar = get_avatar()
-                await avatar.send_avatar_to_channel(
-                    channel,
-                    state=AVATAR_STATE_TALKING,
-                    text=response[:50] + ("..." if len(response) > 50 else "")
-                )
-                
-                logger.info(
-                    f"テキストチャンネル「{channel.name}」に会話内容を送信しました"
-                )
+                if text_channel:  # Use the previously validated text_channel
+                    await text_channel.send(
+                        f"**{member.display_name}**: {text}\n**AI**: {response}"
+                    )
+                    
+                    # Send "talking" avatar
+                    avatar = get_avatar()
+                    await avatar.send_avatar_to_channel(
+                        text_channel,
+                        state=AVATAR_STATE_TALKING,
+                        text=response[:50] + ("..." if len(response) > 50 else "")
+                    )
+                    
+                    logger.info(
+                        f"テキストチャンネル「{text_channel.name}」に会話内容を送信しました"
+                    )
             except Exception as e:
                 logger.error(f"テキストチャンネル通知エラー: {e}")
                 logger.debug(traceback.format_exc())
