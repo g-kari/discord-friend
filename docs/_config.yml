@@ -1,6 +1,6 @@
 title: "Discord AI Voice Bot"
 description: "Documentation for Discord AI Voice Bot (Dify × AIAvatarKit × AivisSpeech)"
-remote_theme: pmarsceill/just-the-docs
+remote_theme: just-the-docs/just-the-docs
 color_scheme: "light"
 plugins:
   - jekyll-remote-theme

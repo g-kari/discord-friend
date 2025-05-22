@@ -150,7 +150,7 @@ pm2 start ecosystem.config.js
 
 ## 詳細ドキュメント
 
-- [開発ガイド](./development.html) - プロジェクト構造、開発環境のセットアップなど
-- [MCPサーバー自動接続機能](./features/mcp-servers.html) - 自動接続機能の詳細と設定方法
-- [セキュリティガイドライン](./security.html) - 機密情報の取り扱いと保護に関するガイドライン
-- [貢献ガイド](./contributing.html) - プロジェクトへの貢献方法
+- [開発ガイド](./development/) - プロジェクト構造、開発環境のセットアップなど
+- [MCPサーバー自動接続機能](./features/mcp-servers/) - 自動接続機能の詳細と設定方法
+- [セキュリティガイドライン](./security/) - 機密情報の取り扱いと保護に関するガイドライン
+- [貢献ガイド](./contributing/) - プロジェクトへの貢献方法
