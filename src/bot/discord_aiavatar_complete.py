@@ -1375,15 +1375,15 @@ try:
             for channel in vc.guild.text_channels:
                 if channel.permissions_for(vc.guild.me).send_messages:
                     text_channel = channel
-                    await channel.send(f"**{username}** の音声を聞いています...")
+                    await text_channel.send(f"**{username}** の音声を聞いています...")
                     logger.debug(
-                        f"録音開始通知をテキストチャンネル「{channel.name}」に送信しました"
+                        f"録音開始通知をテキストチャンネル「{text_channel.name}」に送信しました"
                     )
                     
                     # Idle avatar display
                     avatar = get_avatar()
                     await avatar.send_avatar_to_channel(
-                        channel,
+                        text_channel,
                         state=AVATAR_STATE_IDLE,
                         text="音声を聞いています..."
                     )
@@ -1538,24 +1538,22 @@ try:
 
             # 通知
             try:
-                channel = vc.channel.guild.text_channels[
-                    0
-                ]  # 最初のテキストチャンネルに通知
-                await channel.send(
-                    f"**{member.display_name}**: {text}\n**AI**: {response}"
-                )
-                
-                # Send "talking" avatar
-                avatar = get_avatar()
-                await avatar.send_avatar_to_channel(
-                    channel,
-                    state=AVATAR_STATE_TALKING,
-                    text=response[:50] + ("..." if len(response) > 50 else "")
-                )
-                
-                logger.info(
-                    f"テキストチャンネル「{channel.name}」に会話内容を送信しました"
-                )
+                if text_channel:  # Use the previously validated text_channel
+                    await text_channel.send(
+                        f"**{member.display_name}**: {text}\n**AI**: {response}"
+                    )
+                    
+                    # Send "talking" avatar
+                    avatar = get_avatar()
+                    await avatar.send_avatar_to_channel(
+                        text_channel,
+                        state=AVATAR_STATE_TALKING,
+                        text=response[:50] + ("..." if len(response) > 50 else "")
+                    )
+                    
+                    logger.info(
+                        f"テキストチャンネル「{text_channel.name}」に会話内容を送信しました"
+                    )
             except Exception as e:
                 logger.error(f"テキストチャンネル通知エラー: {e}")
                 logger.debug(traceback.format_exc())
