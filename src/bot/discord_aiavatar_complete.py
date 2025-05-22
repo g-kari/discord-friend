@@ -466,10 +466,14 @@ try:
                             "AIAvatarが初期化されていないため、LLM応答を生成できません"
                         )
                     else:
-                        llm_response_text = await aiavatar.llm.chat(
+                        # message.channelを渡して会話のクッションを送信
+                        logger.info(f"LLM API呼び出し開始: {username}からの入力に対して生成中...")
+                        from services.ai_service import get_ai_response
+                        llm_response_text = await get_ai_response(
                             text=message.content,
                             history=history,  # History up to the previous turn
                             system_prompt=system_prompt,
+                            channel=message.channel
                         )
                     elapsed = time.time() - start_time
                     logger.info(
@@ -539,9 +543,16 @@ try:
                                     )
                                     tts_audio_data = b""
                                 else:
-                                    tts_audio_data = await aiavatar.tts.speak(
-                                        ai_response
-                                    )
+                                    # 会話クッションを送信しながらTTS実行
+                                    from services.ai_service import create_cushion_task
+                                    cushion_task, cancel_event = await create_cushion_task(message.channel)
+                                    try:
+                                        tts_audio_data = await aiavatar.tts.speak(
+                                            ai_response
+                                        )
+                                    finally:
+                                        cancel_event.set()
+                                        await cushion_task
                                 tts_elapsed = time.time() - start_tts_time
                                 logger.info(
                                     f"TTS completed for {username} in {tts_elapsed:.2f}s. Audio data length: {len(tts_audio_data)} bytes."
