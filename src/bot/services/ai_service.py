@@ -4,7 +4,9 @@ AIAvatarKit連携のサービスモジュール
 
 import logging
 import os
+import random
 import sys
+import asyncio
 
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -72,7 +74,7 @@ async def transcribe_audio(audio_file_path):
         return ""
 
 
-async def get_ai_response(text, history=None, system_prompt=None):
+async def get_ai_response(text, history=None, system_prompt=None, channel=None):
     """
     AIアシスタントからの応答を取得
 
@@ -80,15 +82,25 @@ async def get_ai_response(text, history=None, system_prompt=None):
         text: ユーザーの入力テキスト
         history: 会話履歴（なければNone）
         system_prompt: システムプロンプト（なければNone）
+        channel: オプションのDiscordチャンネル（会話クッションを送信する場合）
 
     Returns:
         AI応答のテキスト
     """
+    # 会話クッション用のタスクとキャンセルイベント
+    cushion_task = None
+    cancel_event = None
+
     try:
         if aiavatar is None:
             logger.warning("AIAvatar instance is None, returning mock response")
             return "これはテスト環境のためのモック応答です。"
 
+        # チャンネルが指定されていれば会話クッションを送信開始
+        if channel:
+            cushion_task, cancel_event = await create_cushion_task(channel)
+
+        # LLM APIを呼び出し
         response = await aiavatar.llm.chat(
             text, history=history or [], system_prompt=system_prompt
         )
@@ -96,6 +108,13 @@ async def get_ai_response(text, history=None, system_prompt=None):
     except Exception as e:
         print(f"AI応答エラー: {e}")
         return "すみません、応答の生成中にエラーが発生しました。"
+    finally:
+        # クッション送信を終了
+        if cancel_event:
+            cancel_event.set()
+        # タスクが完了するのを待機
+        if cushion_task:
+            await cushion_task
 
 
 async def text_to_speech(text):
@@ -118,6 +137,44 @@ async def text_to_speech(text):
     except Exception as e:
         print(f"TTS生成エラー: {e}")
         return None
+
+
+async def create_cushion_task(channel):
+    """
+    会話クッション送信用のタスクを作成
+
+    Args:
+        channel: 送信先のDiscordチャンネル
+
+    Returns:
+        (asyncio.Task, asyncio.Event): タスクとキャンセルイベントのタプル
+    """
+    cancel_event = asyncio.Event()
+    
+    async def cushion_sender():
+        sent_messages = []
+        try:
+            # キャンセルされるまでクッションを定期的に送信
+            while not cancel_event.is_set():
+                try:
+                    cushion = get_random_conversation_cushion()
+                    message = await channel.send(cushion)
+                    sent_messages.append(message)
+                    # インターバルを待つが、その間にキャンセルされた場合はすぐに終了
+                    try:
+                        await asyncio.wait_for(cancel_event.wait(), timeout=3.0)
+                    except asyncio.TimeoutError:
+                        # タイムアウトは通常の動作なのでパス
+                        pass
+                except Exception as e:
+                    logger.error(f"会話クッション送信エラー: {e}")
+                    await asyncio.sleep(2.0)  # エラー時も少し待機
+        finally:
+            return sent_messages
+    
+    # クッション送信タスクを作成して返す
+    task = asyncio.create_task(cushion_sender())
+    return task, cancel_event
 
 
 def save_transcribed_text(user_id, text):
@@ -149,3 +206,52 @@ def check_keyword_match(text, keyword):
     if keyword == "":
         return False
     return keyword.lower() in text.lower()
+
+
+def get_random_conversation_cushion():
+    """
+    ランダムな会話のクッション（フィラーワード）を生成
+
+    Returns:
+        ランダムな日本語のフィラーワード
+    """
+    cushions = [
+        "あー",
+        "えー",
+        "うーん",
+        "そうですね",
+        "えーと",
+        "んー",
+        "ちょっと待ってください",
+        "考え中です",
+        "少々お待ちください",
+    ]
+    return random.choice(cushions)
+
+
+async def send_conversation_cushions(channel, interval=2.0, max_cushions=3):
+    """
+    会話のクッションを定期的に送信する非同期関数
+
+    Args:
+        channel: 送信先のDiscordチャンネル
+        interval: クッション送信の間隔（秒）
+        max_cushions: 最大送信回数（デフォルト3回まで）
+
+    Returns:
+        送信したクッションのメッセージのリスト
+    """
+    sent_messages = []
+    
+    # 最大回数までクッションを送信
+    for i in range(max_cushions):
+        try:
+            cushion = get_random_conversation_cushion()
+            message = await channel.send(cushion)
+            sent_messages.append(message)
+            await asyncio.sleep(interval)
+        except Exception as e:
+            logger.error(f"会話クッション送信エラー: {e}")
+            break
+    
+    return sent_messages
