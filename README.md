@@ -235,6 +235,7 @@ pm2 start ecosystem.config.js
 - [開発ガイド](DEVELOPMENT.md) - プロジェクト構造、キーコンポーネント、アーキテクチャの詳細情報
 - [貢献ガイド](CONTRIBUTING.md) - 開発環境のセットアップ、開発ワークフロー、コーディングスタイルの情報
 - [セキュリティガイドライン](SECURITY.md) - 機密情報の取り扱いと保護に関するガイドライン
+- [GitHub Pages ドキュメント](https://g-kari.github.io/discord-friend/) - 使い方やサーバーの立ち上げ方などの詳細なガイド
 
 ### テスト
 
@@ -283,6 +284,7 @@ MCP自動接続機能のテスト方法については、[MCP Server Auto-Join F
 
 ### 参考リンク
 
+- [Discord AI Voice Bot ドキュメント](https://g-kari.github.io/discord-friend/) - 詳細なドキュメントとガイド
 - [Dify公式GitHub](https://github.com/langgenius/dify)
 - [AIAvatarKit公式GitHub](https://github.com/uezo/aiavatarkit)
 - [AivisSpeech公式GitHub](https://github.com/Aivis-Project/AivisSpeech)
