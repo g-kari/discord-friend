@@ -1,0 +1,47 @@
+title: "Discord AI Voice Bot"
+description: "Documentation for Discord AI Voice Bot (Dify × AIAvatarKit × AivisSpeech)"
+remote_theme: pmarsceill/just-the-docs
+color_scheme: "light"
+plugins:
+  - jekyll-remote-theme
+
+# Enable support for Japanese text on the site
+lang: ja
+encoding: utf-8
+
+# Auxiliary links for the upper right navigation
+aux_links:
+  "GitHub Repository":
+    - "//github.com/g-kari/discord-friend"
+
+# Makes Aux links open in a new tab
+aux_links_new_tab: true
+
+# Footer content
+footer_content: "Copyright &copy; 2023."
+
+# Search functionality
+search_enabled: true
+
+# Back to top link
+back_to_top: true
+back_to_top_text: "トップに戻る"
+
+# Collections for organizing content
+collections:
+  features:
+    permalink: "/:collection/:path/"
+    output: true
+
+# Default settings
+defaults:
+  -
+    scope:
+      path: "" # All files
+    values:
+      layout: "default"
+  -
+    scope:
+      path: "_features"
+    values:
+      layout: "default"
