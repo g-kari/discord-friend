@@ -21,6 +21,9 @@ from discord.ext import commands
 # Import config
 from src.bot import config
 
+# Import our Live2D avatar service
+from services.avatar import get_avatar, AVATAR_STATE_IDLE, AVATAR_STATE_TALKING, AVATAR_STATE_THINKING
+
 # Conditionally import dependencies to handle missing packages in test environments
 try:
     from aiavatar import AIAvatar
@@ -156,6 +159,16 @@ try:
             )
             """
             )
+            # デフォルトシステムプロンプトテーブル
+            c.execute(
+                """
+            CREATE TABLE IF NOT EXISTS default_system_prompt (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                prompt TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+            )
             # 録音設定テーブル
             c.execute(
                 """
@@ -254,15 +267,47 @@ try:
         except sqlite3.Error as e:
             print(f"プロンプト設定エラー: {e}")
 
+    def set_default_system_prompt(prompt):
+        try:
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute(
+                "INSERT OR REPLACE INTO default_system_prompt (id, prompt, updated_at) VALUES (?, ?, ?)",
+                (1, prompt, datetime_to_str(datetime.now())),
+            )
+            conn.commit()
+            print(f"デフォルトのシステムプロンプトを設定しました - {prompt}")
+            return True
+        except sqlite3.Error as e:
+            print(f"デフォルトプロンプト設定エラー: {e}")
+            return False
+
+    def get_default_system_prompt():
+        try:
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT prompt FROM default_system_prompt WHERE id = 1")
+            row = c.fetchone()
+            result = row[0] if row else DEFAULT_SYSTEM_PROMPT
+            print(f"デフォルトのシステムプロンプトを取得しました")
+            return result
+        except sqlite3.Error as e:
+            print(f"デフォルトプロンプト取得エラー: {e}")
+            return DEFAULT_SYSTEM_PROMPT
+    
     def get_user_prompt(user_id):
         try:
             conn = get_db_connection()
             c = conn.cursor()
             c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id,))
             row = c.fetchone()
-            result = row[0] if row else config.DEFAULT_SYSTEM_PROMPT
+            if row:
+                return row[0]  # ユーザー固有のプロンプトがある場合はそれを使用
+            
+            # ユーザー固有のプロンプトがない場合はデフォルトプロンプトを使用
+            default_prompt = get_default_system_prompt()
             print(f"システムプロンプトを取得しました")
-            return result
+            return default_prompt
         except sqlite3.Error as e:
             print(f"プロンプト取得エラー: {e}")
             return config.DEFAULT_SYSTEM_PROMPT
@@ -412,6 +457,29 @@ try:
                 # Let the command system handle this.
                 # If you also want to process commands here for some reason, remove this check.
                 # However, usually, commands are handled by their own decorators.
+                
+                # Special case for set_default_prompt text command (needs to be here to handle admin permissions)
+                if message.content.startswith(f"{self.command_prefix}set_default_prompt "):
+                    # Check if the user is an admin
+                    if isinstance(message.author, discord.Member) and message.author.guild_permissions.administrator:
+                        prompt = message.content[len(f"{self.command_prefix}set_default_prompt "):]
+                        if set_default_system_prompt(prompt):
+                            await message.channel.send(
+                                f"デフォルトのシステムプロンプトを設定しました。\n```{prompt}```"
+                            )
+                        else:
+                            await message.channel.send(
+                                "デフォルトのシステムプロンプト設定中にエラーが発生しました。"
+                            )
+                    else:
+                        await message.channel.send("このコマンドは管理者のみ使用できます。")
+                # Check for get_default_prompt command
+                elif message.content.strip() == f"{self.command_prefix}get_default_prompt":
+                    prompt = get_default_system_prompt()
+                    await message.channel.send(
+                        f"現在のデフォルトシステムプロンプト：\n```{prompt}```"
+                    )
+                
                 return
 
             if not message.guild:
@@ -463,10 +531,14 @@ try:
                             "AIAvatarが初期化されていないため、LLM応答を生成できません"
                         )
                     else:
-                        llm_response_text = await aiavatar.llm.chat(
+                        # message.channelを渡して会話のクッションを送信
+                        logger.info(f"LLM API呼び出し開始: {username}からの入力に対して生成中...")
+                        from services.ai_service import get_ai_response
+                        llm_response_text = await get_ai_response(
                             text=message.content,
                             history=history,  # History up to the previous turn
                             system_prompt=system_prompt,
+                            channel=message.channel
                         )
                     elapsed = time.time() - start_time
                     logger.info(
@@ -536,9 +608,16 @@ try:
                                     )
                                     tts_audio_data = b""
                                 else:
-                                    tts_audio_data = await aiavatar.tts.speak(
-                                        ai_response
-                                    )
+                                    # 会話クッションを送信しながらTTS実行
+                                    from services.ai_service import create_cushion_task
+                                    cushion_task, cancel_event = await create_cushion_task(message.channel)
+                                    try:
+                                        tts_audio_data = await aiavatar.tts.speak(
+                                            ai_response
+                                        )
+                                    finally:
+                                        cancel_event.set()
+                                        await cushion_task
                                 tts_elapsed = time.time() - start_tts_time
                                 logger.info(
                                     f"TTS completed for {username} in {tts_elapsed:.2f}s. Audio data length: {len(tts_audio_data)} bytes."
@@ -910,6 +989,20 @@ try:
     async def leave(interaction: discord.Interaction):
         for vc in bot.voice_clients:
             if isinstance(vc, VoiceClient) and vc.guild == interaction.guild:
+                # Send idle avatar before leaving
+                try:
+                    avatar = get_avatar()
+                    for channel in interaction.guild.text_channels:
+                        if channel.permissions_for(vc.guild.me).send_messages:
+                            await avatar.send_avatar_to_channel(
+                                channel,
+                                state=AVATAR_STATE_IDLE,
+                                text="さようなら！またね！"
+                            )
+                            break
+                except Exception as e:
+                    logger.error(f"退出時のアバター表示エラー: {e}")
+                
                 # 音声シンクをクリーンアップ
                 if hasattr(vc, "sink") and vc.sink:
                     try:
@@ -931,6 +1024,26 @@ try:
         set_user_prompt(interaction.user.id, prompt)
         await interaction.response.send_message(
             f"システムプロンプトを設定しました。\n```{prompt}```"
+        )
+
+    @bot.tree.command(name="set_default_prompt", description="AIのデフォルトシステムプロンプトを設定します（管理者のみ）")
+    @app_commands.describe(prompt="デフォルトのシステムプロンプト")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_default_prompt(interaction: discord.Interaction, prompt: str):
+        if set_default_system_prompt(prompt):
+            await interaction.response.send_message(
+                f"デフォルトのシステムプロンプトを設定しました。\n```{prompt}```"
+            )
+        else:
+            await interaction.response.send_message(
+                "デフォルトのシステムプロンプト設定中にエラーが発生しました。"
+            )
+    
+    @bot.tree.command(name="get_default_prompt", description="現在のデフォルトシステムプロンプトを表示します")
+    async def get_default_prompt(interaction: discord.Interaction):
+        prompt = get_default_system_prompt()
+        await interaction.response.send_message(
+            f"現在のデフォルトシステムプロンプト：\n```{prompt}```"
         )
 
     @bot.tree.command(
@@ -1299,13 +1412,23 @@ try:
             return
 
         # 録音前の通知（テキストチャンネルに）
+        text_channel = None
         try:
             # 最初のテキストチャンネルを取得
             for channel in vc.guild.text_channels:
                 if channel.permissions_for(vc.guild.me).send_messages:
-                    await channel.send(f"**{username}** の音声を聞いています...")
+                    text_channel = channel
+                    await text_channel.send(f"**{username}** の音声を聞いています...")
                     logger.debug(
-                        f"録音開始通知をテキストチャンネル「{channel.name}」に送信しました"
+                        f"録音開始通知をテキストチャンネル「{text_channel.name}」に送信しました"
+                    )
+                    
+                    # Idle avatar display
+                    avatar = get_avatar()
+                    await avatar.send_avatar_to_channel(
+                        text_channel,
+                        state=AVATAR_STATE_IDLE,
+                        text="音声を聞いています..."
                     )
                     break
         except Exception as e:
@@ -1411,6 +1534,16 @@ try:
 
             # LLM応答（システムプロンプトでカスタマイズ）
             logger.info(f"AI応答生成開始: ユーザー「{username}」の質問「{text}」")
+            
+            # Send "thinking" avatar if we have a text channel
+            if text_channel:
+                avatar = get_avatar()
+                await avatar.send_avatar_to_channel(
+                    text_channel,
+                    state=AVATAR_STATE_THINKING,
+                    text=f"「{text[:20]}...」について考えています..."
+                )
+                
             start_time = time.time()
             response = await aiavatar.llm.chat(
                 text, history=history, system_prompt=system_prompt
@@ -1448,15 +1581,22 @@ try:
 
             # 通知
             try:
-                channel = vc.channel.guild.text_channels[
-                    0
-                ]  # 最初のテキストチャンネルに通知
-                await channel.send(
-                    f"**{member.display_name}**: {text}\n**AI**: {response}"
-                )
-                logger.info(
-                    f"テキストチャンネル「{channel.name}」に会話内容を送信しました"
-                )
+                if text_channel:  # Use the previously validated text_channel
+                    await text_channel.send(
+                        f"**{member.display_name}**: {text}\n**AI**: {response}"
+                    )
+                    
+                    # Send "talking" avatar
+                    avatar = get_avatar()
+                    await avatar.send_avatar_to_channel(
+                        text_channel,
+                        state=AVATAR_STATE_TALKING,
+                        text=response[:50] + ("..." if len(response) > 50 else "")
+                    )
+                    
+                    logger.info(
+                        f"テキストチャンネル「{text_channel.name}」に会話内容を送信しました"
+                    )
             except Exception as e:
                 logger.error(f"テキストチャンネル通知エラー: {e}")
                 logger.debug(traceback.format_exc())
