@@ -10,6 +10,8 @@ on:
 jobs:
   lint-fix:
     name: Fix Linting Issues
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     # Skip this job for PRs, only run on direct pushes to main
     if: github.event_name != 'pull_request'
