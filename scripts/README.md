@@ -1,4 +1,8 @@
-# Git Secrets Scanner
+# Scripts
+
+このディレクトリには、リポジトリの管理と開発に役立つ便利なスクリプトが含まれています。
+
+## Git Secrets Scanner
 
 このスクリプトは、Gitリポジトリの履歴から機密情報（APIキー、トークン、パスワードなど）を検出するためのツールです。
 
@@ -82,3 +86,46 @@ git filter-repo --replace-text expressions.txt
 # 毎月最初の日に実行する例
 0 0 1 * * cd /path/to/repo && python scripts/check_git_secrets.py > security_report.txt
 ```
+
+# Lint and Fix Script
+
+このディレクトリには、Pythonコードの自動リンティングと修正を行うスクリプトも含まれています。
+
+## 使い方
+
+```bash
+./scripts/lint_and_fix.sh [options]
+```
+
+### オプション
+
+- `--no-commit`: 変更を自動コミットしない
+- `--no-black`: blackを実行しない
+- `--no-isort`: isortを実行しない
+- `--no-flake8`: flake8を実行しない
+- `--no-mypy`: mypyを実行しない
+- `--message=commit-msg`: コミットメッセージを指定（デフォルト: "🤖 Auto-fix linting issues"）
+- `--dir=src_dir`: ソースディレクトリを指定（デフォルト: "src"）
+
+### 例
+
+```bash
+# デフォルト設定で実行（全てのリンターを実行し、変更があれば自動コミット）
+./scripts/lint_and_fix.sh
+
+# コミットせずに実行
+./scripts/lint_and_fix.sh --no-commit
+
+# カスタムコミットメッセージを指定
+./scripts/lint_and_fix.sh --message="style: Fix import ordering and formatting"
+
+# 特定のディレクトリのみチェック
+./scripts/lint_and_fix.sh --dir=src/bot
+```
+
+## 機能
+
+1. black と isort を使用してコードの自動フォーマット
+2. flake8 と mypy を使用した追加のリンティングチェック
+3. 自動フォーマットで行われた変更の自動コミット
+4. 手動での修正が必要な問題の報告
