@@ -44,7 +44,10 @@ If you prefer to develop locally:
 2. Make your changes
 3. Run linting and tests:
    ```bash
-   # Linting
+   # Automatic linting with fixes and commit
+   ./scripts/lint_and_fix.sh --dir=src/
+   
+   # Or run linters individually
    black src/
    isort src/
    flake8 src/
