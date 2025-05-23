@@ -227,6 +227,111 @@ def set_recording_enabled(user_id, enabled=True, keyword=None):
     conn.close()
 
 
+def reset_user_settings(user_id):
+    """
+    ユーザーの全設定をリセット
+
+    Args:
+        user_id: ユーザーID
+    
+    Returns:
+        成功したかどうか
+    """
+    try:
+        conn = sqlite3.connect(config.DB_PATH)
+        c = conn.cursor()
+        
+        # システムプロンプトを削除
+        c.execute("DELETE FROM system_prompts WHERE user_id = ?", (user_id,))
+        
+        # 録音設定をリセット
+        c.execute("DELETE FROM recording_settings WHERE user_id = ?", (user_id,))
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+def get_database_stats():
+    """
+    データベースの統計情報を取得
+
+    Returns:
+        データベースの統計情報を含む辞書
+    """
+    conn = sqlite3.connect(config.DB_PATH)
+    c = conn.cursor()
+    
+    # 会話履歴の件数
+    c.execute("SELECT COUNT(*) FROM conversation_history")
+    history_count = c.fetchone()[0]
+    
+    # ユニークユーザー数
+    c.execute("SELECT COUNT(DISTINCT user_id) FROM conversation_history")
+    unique_users = c.fetchone()[0]
+    
+    # システムプロンプト数
+    c.execute("SELECT COUNT(*) FROM system_prompts")
+    prompt_count = c.fetchone()[0]
+    
+    # 録音設定数
+    c.execute("SELECT COUNT(*) FROM recording_settings")
+    recording_settings_count = c.fetchone()[0]
+    
+    # 最も古いメッセージの日付
+    c.execute("SELECT MIN(timestamp) FROM conversation_history")
+    oldest_message = c.fetchone()[0]
+    
+    # 最も新しいメッセージの日付
+    c.execute("SELECT MAX(timestamp) FROM conversation_history")
+    newest_message = c.fetchone()[0]
+    
+    conn.close()
+    
+    return {
+        "history_count": history_count,
+        "unique_users": unique_users,
+        "prompt_count": prompt_count,
+        "recording_settings_count": recording_settings_count,
+        "oldest_message": oldest_message,
+        "newest_message": newest_message
+    }
+
+
+def prune_old_conversations(days):
+    """
+    指定された日数より古い会話履歴を削除
+
+    Args:
+        days: 何日前より古い履歴を削除するか
+
+    Returns:
+        削除された行数
+    """
+    try:
+        conn = sqlite3.connect(config.DB_PATH)
+        c = conn.cursor()
+        
+        # 指定日数より古いレコードを削除
+        # SQLiteでは日付計算にjulianday()を使用
+        c.execute(
+            """
+            DELETE FROM conversation_history
+            WHERE julianday('now') - julianday(timestamp) > ?
+            """,
+            (days,)
+        )
+        
+        deleted_count = c.rowcount
+        conn.commit()
+        conn.close()
+        return deleted_count
+    except Exception:
+        return -1
+
+
 def get_recording_settings(user_id):
     """
     ユーザーの録音設定を取得
@@ -250,3 +355,74 @@ def get_recording_settings(user_id):
         # デフォルト設定：録音有効、キーワードなし
         return True, None
     return row[0], row[1]
+
+
+def get_all_users():
+    """
+    設定が保存されている全ユーザーのリストを取得
+
+    Returns:
+        ユーザーIDのリスト
+    """
+    conn = sqlite3.connect(config.DB_PATH)
+    c = conn.cursor()
+    
+    # システムプロンプトテーブルからユーザーを取得
+    c.execute("SELECT DISTINCT user_id FROM system_prompts")
+    system_prompt_users = set(row[0] for row in c.fetchall())
+    
+    # 録音設定テーブルからユーザーを取得
+    c.execute("SELECT DISTINCT user_id FROM recording_settings")
+    recording_users = set(row[0] for row in c.fetchall())
+    
+    # 会話履歴テーブルからユーザーを取得
+    c.execute("SELECT DISTINCT user_id FROM conversation_history")
+    history_users = set(row[0] for row in c.fetchall())
+    
+    # すべてのユーザーを結合
+    all_users = list(system_prompt_users | recording_users | history_users)
+    
+    conn.close()
+    return all_users
+
+
+def get_user_settings(user_id):
+    """
+    ユーザーの全設定を取得
+
+    Args:
+        user_id: ユーザーID
+
+    Returns:
+        ユーザー設定を含む辞書
+    """
+    conn = sqlite3.connect(config.DB_PATH)
+    c = conn.cursor()
+    
+    # システムプロンプト
+    c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id,))
+    prompt_row = c.fetchone()
+    prompt = prompt_row[0] if prompt_row else None
+    
+    # 録音設定
+    c.execute(
+        "SELECT enabled, keyword FROM recording_settings WHERE user_id = ?", (user_id,)
+    )
+    recording_row = c.fetchone()
+    recording_enabled = recording_row[0] if recording_row else True
+    keyword = recording_row[1] if recording_row else None
+    
+    # 会話履歴の件数
+    c.execute(
+        "SELECT COUNT(*) FROM conversation_history WHERE user_id = ?", (user_id,)
+    )
+    message_count = c.fetchone()[0]
+    
+    conn.close()
+    
+    return {
+        "prompt": prompt,
+        "recording_enabled": recording_enabled,
+        "keyword": keyword,
+        "message_count": message_count
+    }

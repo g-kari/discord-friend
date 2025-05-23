@@ -294,7 +294,7 @@ try:
         except sqlite3.Error as e:
             print(f"デフォルトプロンプト取得エラー: {e}")
             return DEFAULT_SYSTEM_PROMPT
-    
+
     def get_user_prompt(user_id):
         try:
             conn = get_db_connection()
@@ -303,7 +303,7 @@ try:
             row = c.fetchone()
             if row:
                 return row[0]  # ユーザー固有のプロンプトがある場合はそれを使用
-            
+
             # ユーザー固有のプロンプトがない場合はデフォルトプロンプトを使用
             default_prompt = get_default_system_prompt()
             print(f"システムプロンプトを取得しました")
@@ -457,7 +457,7 @@ try:
                 # Let the command system handle this.
                 # If you also want to process commands here for some reason, remove this check.
                 # However, usually, commands are handled by their own decorators.
-                
+
                 # Special case for set_default_prompt text command (needs to be here to handle admin permissions)
                 if message.content.startswith(f"{self.command_prefix}set_default_prompt "):
                     # Check if the user is an admin
@@ -479,7 +479,7 @@ try:
                     await message.channel.send(
                         f"現在のデフォルトシステムプロンプト：\n```{prompt}```"
                     )
-                
+
                 return
 
             if not message.guild:
@@ -1002,7 +1002,7 @@ try:
                             break
                 except Exception as e:
                     logger.error(f"退出時のアバター表示エラー: {e}")
-                
+
                 # 音声シンクをクリーンアップ
                 if hasattr(vc, "sink") and vc.sink:
                     try:
@@ -1038,7 +1038,7 @@ try:
             await interaction.response.send_message(
                 "デフォルトのシステムプロンプト設定中にエラーが発生しました。"
             )
-    
+
     @bot.tree.command(name="get_default_prompt", description="現在のデフォルトシステムプロンプトを表示します")
     async def get_default_prompt(interaction: discord.Interaction):
         prompt = get_default_system_prompt()
@@ -1343,16 +1343,16 @@ try:
         try:
             # グローバル変数の更新
             config.DEFAULT_SYSTEM_PROMPT = prompt
-            
+
             # 設定ファイルに永続的に保存（オプション）
             if add_to_config:
                 from utils import env_manager
-                
+
                 # 環境変数ファイルを更新
                 result = env_manager.update_env_variable(
                     key="DEFAULT_SYSTEM_PROMPT", value=prompt
                 )
-                
+
                 if result:
                     logger.info(f"デフォルトシステムプロンプトを.envファイルに保存しました")
                     await interaction.response.send_message(
@@ -1374,6 +1374,189 @@ try:
             await interaction.response.send_message(
                 f"デフォルトシステムプロンプトの設定中にエラーが発生しました: {str(e)}"
             )
+
+    # 管理者ダッシュボード：ユーザー一覧
+    @bot.tree.command(
+        name="admin_list_users",
+        description="登録されているユーザー一覧を表示します（管理者のみ）",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def admin_list_users(interaction: discord.Interaction):
+        from models.database import get_all_users, get_user_settings
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            # ユーザーリストを取得
+            users = get_all_users()
+
+            if not users:
+                await interaction.followup.send("登録されているユーザーはいません。", ephemeral=True)
+                return
+
+            # ユーザー情報を収集
+            user_info = []
+            for user_id in users:
+                try:
+                    # Discordからユーザー情報を取得
+                    discord_user = await bot.fetch_user(user_id)
+                    user_name = f"{discord_user.name}#{discord_user.discriminator}" if discord_user else f"Unknown ({user_id})"
+
+                    # データベースからユーザー設定を取得
+                    settings = get_user_settings(user_id)
+
+                    user_info.append({
+                        "id": user_id,
+                        "name": user_name,
+                        "settings": settings
+                    })
+                except Exception as e:
+                    logger.error(f"ユーザー情報の取得中にエラー発生: {e}")
+                    user_info.append({
+                        "id": user_id,
+                        "name": f"Unknown ({user_id})",
+                        "error": str(e)
+                    })
+
+            # ユーザーリストを構築
+            response = "## 登録ユーザー一覧\n\n"
+            for user in user_info:
+                response += f"### {user['name']} (ID: {user['id']})\n"
+                if "error" in user:
+                    response += f"- エラー: {user['error']}\n"
+                else:
+                    settings = user["settings"]
+                    response += f"- カスタムプロンプト: {'あり' if settings['prompt'] else 'なし'}\n"
+                    response += f"- 録音設定: {'有効' if settings['recording_enabled'] else '無効'}\n"
+                    response += f"- キーワードトリガー: {settings['keyword'] if settings['keyword'] else 'なし'}\n"
+                    response += f"- メッセージ数: {settings['message_count']}\n"
+                response += "\n"
+
+            # 長すぎる場合は分割して送信
+            if len(response) > 1900:
+                chunks = [response[i:i+1900] for i in range(0, len(response), 1900)]
+                for i, chunk in enumerate(chunks):
+                    if i == 0:
+                        await interaction.followup.send(chunk, ephemeral=True)
+                    else:
+                        await interaction.followup.send(chunk, ephemeral=True)
+            else:
+                await interaction.followup.send(response, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"管理者ダッシュボードのユーザーリスト表示中にエラー発生: {e}")
+            await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
+
+
+    # 管理者ダッシュボード：ユーザー設定リセット
+    @bot.tree.command(
+        name="admin_reset_user",
+        description="指定されたユーザーの設定をリセットします（管理者のみ）",
+    )
+    @app_commands.describe(user_id="リセットするユーザーのID")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def admin_reset_user(interaction: discord.Interaction, user_id: str):
+        from models.database import reset_user_settings
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            try:
+                user_id_int = int(user_id)
+            except ValueError:
+                await interaction.followup.send("ユーザーIDは数値である必要があります。", ephemeral=True)
+                return
+
+            # ユーザーが存在するか確認
+            try:
+                discord_user = await bot.fetch_user(user_id_int)
+                user_name = f"{discord_user.name}#{discord_user.discriminator}"
+            except:
+                user_name = f"Unknown ({user_id_int})"
+
+            # ユーザー設定をリセット
+            success = reset_user_settings(user_id_int)
+
+            if success:
+                await interaction.followup.send(
+                    f"ユーザー {user_name} の設定を正常にリセットしました。", ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"ユーザー {user_name} の設定リセット中にエラーが発生しました。", ephemeral=True
+                )
+
+        except Exception as e:
+            logger.error(f"ユーザー設定のリセット中にエラー発生: {e}")
+            await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
+
+
+    # 管理者ダッシュボード：データベース統計
+    @bot.tree.command(
+        name="admin_db_stats",
+        description="データベース統計を表示します（管理者のみ）",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def admin_db_stats(interaction: discord.Interaction):
+        from models.database import get_database_stats
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            # データベース統計を取得
+            stats = get_database_stats()
+
+            response = "## データベース統計\n\n"
+            response += f"- 会話履歴数: {stats['history_count']}メッセージ\n"
+            response += f"- ユニークユーザー数: {stats['unique_users']}ユーザー\n"
+            response += f"- カスタムプロンプト数: {stats['prompt_count']}\n"
+            response += f"- 録音設定数: {stats['recording_settings_count']}\n"
+
+            if stats['oldest_message']:
+                response += f"- 最も古いメッセージ: {stats['oldest_message']}\n"
+
+            if stats['newest_message']:
+                response += f"- 最も新しいメッセージ: {stats['newest_message']}\n"
+
+            await interaction.followup.send(response, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"データベース統計の表示中にエラー発生: {e}")
+            await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
+
+
+    # 管理者ダッシュボード：古い会話履歴の削除
+    @bot.tree.command(
+        name="admin_prune_history",
+        description="指定日数より古い会話履歴を削除します（管理者のみ）",
+    )
+    @app_commands.describe(days="何日前より古い履歴を削除するか（例：30）")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def admin_prune_history(interaction: discord.Interaction, days: int):
+        from models.database import prune_old_conversations
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            if days <= 0:
+                await interaction.followup.send("日数は1以上の正の整数を指定してください。", ephemeral=True)
+                return
+
+            # 古い会話を削除
+            deleted_count = prune_old_conversations(days)
+
+            if deleted_count >= 0:
+                await interaction.followup.send(
+                    f"{days}日より古い会話履歴を{deleted_count}件削除しました。", ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "会話履歴の削除中にエラーが発生しました。", ephemeral=True
+                )
+
+        except Exception as e:
+            logger.error(f"古い会話履歴の削除中にエラー発生: {e}")
+            await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
 
     async def trigger_ai_conversation(vc, member):
         """
@@ -1422,7 +1605,7 @@ try:
                     logger.debug(
                         f"録音開始通知をテキストチャンネル「{text_channel.name}」に送信しました"
                     )
-                    
+
                     # Idle avatar display
                     avatar = get_avatar()
                     await avatar.send_avatar_to_channel(
@@ -1534,7 +1717,7 @@ try:
 
             # LLM応答（システムプロンプトでカスタマイズ）
             logger.info(f"AI応答生成開始: ユーザー「{username}」の質問「{text}」")
-            
+
             # Send "thinking" avatar if we have a text channel
             if text_channel:
                 avatar = get_avatar()
@@ -1543,7 +1726,7 @@ try:
                     state=AVATAR_STATE_THINKING,
                     text=f"「{text[:20]}...」について考えています..."
                 )
-                
+
             start_time = time.time()
             response = await aiavatar.llm.chat(
                 text, history=history, system_prompt=system_prompt
@@ -1585,7 +1768,7 @@ try:
                     await text_channel.send(
                         f"**{member.display_name}**: {text}\n**AI**: {response}"
                     )
-                    
+
                     # Send "talking" avatar
                     avatar = get_avatar()
                     await avatar.send_avatar_to_channel(
@@ -1593,7 +1776,7 @@ try:
                         state=AVATAR_STATE_TALKING,
                         text=response[:50] + ("..." if len(response) > 50 else "")
                     )
-                    
+
                     logger.info(
                         f"テキストチャンネル「{text_channel.name}」に会話内容を送信しました"
                     )
