@@ -218,10 +218,12 @@ class TestDatabaseFunctions(unittest.TestCase):
                 "SELECT prompt FROM system_prompts WHERE user_id = ?", (str(user_id),)
             )
             row = cursor.fetchone()
+            # Use the patched DEFAULT_SYSTEM_PROMPT from config
+            from src.bot import config
             return (
                 row[0]
                 if row
-                else "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+                else config.DEFAULT_SYSTEM_PROMPT
             )
 
         # Test with our direct DB connection
