@@ -1027,16 +1027,45 @@ try:
         )
 
     @bot.tree.command(name="set_default_prompt", description="AIのデフォルトシステムプロンプトを設定します（管理者のみ）")
-    @app_commands.describe(prompt="デフォルトのシステムプロンプト")
+    @app_commands.describe(prompt="デフォルトのシステムプロンプト", add_to_config="設定ファイルに永続的に追加する場合はTrue")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_default_prompt(interaction: discord.Interaction, prompt: str):
-        if set_default_system_prompt(prompt):
+    async def set_default_prompt(interaction: discord.Interaction, prompt: str, add_to_config: bool = False):
+        try:
+            # グローバル変数の更新
+            config.DEFAULT_SYSTEM_PROMPT = prompt
+            
+            # データベースに設定
+            set_default_system_prompt(prompt)
+
+            # 設定ファイルに永続的に保存（オプション）
+            if add_to_config:
+                from utils import env_manager
+
+                # 環境変数ファイルを更新
+                result = env_manager.update_env_variable(
+                    key="DEFAULT_SYSTEM_PROMPT", value=prompt
+                )
+
+                if result:
+                    logger.info(f"デフォルトシステムプロンプトを.envファイルに保存しました")
+                    await interaction.response.send_message(
+                        f"デフォルトシステムプロンプトを設定し、設定ファイルに永続的に保存しました。\n```{prompt}```"
+                    )
+                else:
+                    logger.warning(
+                        "デフォルトシステムプロンプトを保存する.envファイルが見つからないか、更新できませんでした"
+                    )
+                    await interaction.response.send_message(
+                        f"デフォルトシステムプロンプトを一時的に設定しましたが、設定ファイルが見つからないため永続的に保存できませんでした。\n```{prompt}```"
+                    )
+            else:
+                await interaction.response.send_message(
+                    f"デフォルトシステムプロンプトを一時的に設定しました。ボット再起動後にリセットされます。\n```{prompt}```"
+                )
+        except Exception as e:
+            logger.error(f"デフォルトシステムプロンプト設定中にエラーが発生しました: {e}")
             await interaction.response.send_message(
-                f"デフォルトのシステムプロンプトを設定しました。\n```{prompt}```"
-            )
-        else:
-            await interaction.response.send_message(
-                "デフォルトのシステムプロンプト設定中にエラーが発生しました。"
+                f"デフォルトシステムプロンプトの設定中にエラーが発生しました: {str(e)}"
             )
 
     @bot.tree.command(name="get_default_prompt", description="現在のデフォルトシステムプロンプトを表示します")
