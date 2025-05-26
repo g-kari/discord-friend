@@ -27,6 +27,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # TTS設定
 AIVISPEECH_API_URL = os.getenv("AIVISSPEECH_API_URL", "http://localhost:50021")
 
+# AIのデフォルトシステムプロンプト
+DEFAULT_SYSTEM_PROMPT = os.getenv(
+    "DEFAULT_SYSTEM_PROMPT", "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+)
+
 # データベース設定
 DB_PATH = "aiavatar_bot.db"
 
@@ -35,6 +40,19 @@ MAX_RECORDING_DURATION = 15  # 秒
 SILENCE_THRESHOLD = 0.01
 SILENCE_DURATION = 1.5
 SAMPLE_RATE = 16000
+
+# 自動接続するMCPサーバーとチャンネルの設定
+# フォーマット: {"サーバー名": ["チャンネル名1", "チャンネル名2", ...], ...}
+# 環境変数から設定を読み込み、なければ空の辞書をデフォルト値とする
+MCP_SERVERS = {}
+mcp_servers_env = os.getenv("MCP_SERVERS")
+if mcp_servers_env:
+    try:
+        MCP_SERVERS = json.loads(mcp_servers_env)
+    except json.JSONDecodeError:
+        logger.error(
+            "警告: MCP_SERVERSの形式が正しくありません。JSONフォーマットで指定してください。"
+        )
 
 # 自動接続するMCPサーバーとチャンネルの設定
 # フォーマット: {"サーバー名": ["チャンネル名1", "チャンネル名2", ...], ...}

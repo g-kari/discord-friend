@@ -18,11 +18,11 @@ import soundfile as sf
 from discord import FFmpegPCMAudio, VoiceClient, app_commands
 from discord.ext import commands
 
+# Import config
+from src.bot import config
+
 # Import our Live2D avatar service
 from services.avatar import get_avatar, AVATAR_STATE_IDLE, AVATAR_STATE_TALKING, AVATAR_STATE_THINKING
-
-# Default system prompt for AI responses
-DEFAULT_SYSTEM_PROMPT = "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
 
 # Conditionally import dependencies to handle missing packages in test environments
 try:
@@ -294,7 +294,7 @@ try:
         except sqlite3.Error as e:
             print(f"デフォルトプロンプト取得エラー: {e}")
             return DEFAULT_SYSTEM_PROMPT
-    
+
     def get_user_prompt(user_id):
         try:
             conn = get_db_connection()
@@ -303,14 +303,14 @@ try:
             row = c.fetchone()
             if row:
                 return row[0]  # ユーザー固有のプロンプトがある場合はそれを使用
-            
+
             # ユーザー固有のプロンプトがない場合はデフォルトプロンプトを使用
             default_prompt = get_default_system_prompt()
             print(f"システムプロンプトを取得しました")
             return default_prompt
         except sqlite3.Error as e:
             print(f"プロンプト取得エラー: {e}")
-            return DEFAULT_SYSTEM_PROMPT
+            return config.DEFAULT_SYSTEM_PROMPT
 
     # 録音設定
     def set_recording_enabled(user_id, enabled=True, keyword=None):
@@ -457,7 +457,7 @@ try:
                 # Let the command system handle this.
                 # If you also want to process commands here for some reason, remove this check.
                 # However, usually, commands are handled by their own decorators.
-                
+
                 # Special case for set_default_prompt text command (needs to be here to handle admin permissions)
                 if message.content.startswith(f"{self.command_prefix}set_default_prompt "):
                     # Check if the user is an admin
@@ -479,7 +479,7 @@ try:
                     await message.channel.send(
                         f"現在のデフォルトシステムプロンプト：\n```{prompt}```"
                     )
-                
+
                 return
 
             if not message.guild:
@@ -1002,7 +1002,7 @@ try:
                             break
                 except Exception as e:
                     logger.error(f"退出時のアバター表示エラー: {e}")
-                
+
                 # 音声シンクをクリーンアップ
                 if hasattr(vc, "sink") and vc.sink:
                     try:
@@ -1027,18 +1027,47 @@ try:
         )
 
     @bot.tree.command(name="set_default_prompt", description="AIのデフォルトシステムプロンプトを設定します（管理者のみ）")
-    @app_commands.describe(prompt="デフォルトのシステムプロンプト")
+    @app_commands.describe(prompt="デフォルトのシステムプロンプト", add_to_config="設定ファイルに永続的に追加する場合はTrue")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_default_prompt(interaction: discord.Interaction, prompt: str):
-        if set_default_system_prompt(prompt):
+    async def set_default_prompt(interaction: discord.Interaction, prompt: str, add_to_config: bool = False):
+        try:
+            # グローバル変数の更新
+            config.DEFAULT_SYSTEM_PROMPT = prompt
+            
+            # データベースに設定
+            set_default_system_prompt(prompt)
+
+            # 設定ファイルに永続的に保存（オプション）
+            if add_to_config:
+                from src.bot.utils import env_manager
+
+                # 環境変数ファイルを更新
+                result = env_manager.update_env_variable(
+                    key="DEFAULT_SYSTEM_PROMPT", value=prompt
+                )
+
+                if result:
+                    logger.info(f"デフォルトシステムプロンプトを.envファイルに保存しました")
+                    await interaction.response.send_message(
+                        f"デフォルトシステムプロンプトを設定し、設定ファイルに永続的に保存しました。\n```{prompt}```"
+                    )
+                else:
+                    logger.warning(
+                        "デフォルトシステムプロンプトを保存する.envファイルが見つからないか、更新できませんでした"
+                    )
+                    await interaction.response.send_message(
+                        f"デフォルトシステムプロンプトを一時的に設定しましたが、設定ファイルが見つからないため永続的に保存できませんでした。\n```{prompt}```"
+                    )
+            else:
+                await interaction.response.send_message(
+                    f"デフォルトシステムプロンプトを一時的に設定しました。ボット再起動後にリセットされます。\n```{prompt}```"
+                )
+        except Exception as e:
+            logger.error(f"デフォルトシステムプロンプト設定中にエラーが発生しました: {e}")
             await interaction.response.send_message(
-                f"デフォルトのシステムプロンプトを設定しました。\n```{prompt}```"
+                f"デフォルトシステムプロンプトの設定中にエラーが発生しました: {str(e)}"
             )
-        else:
-            await interaction.response.send_message(
-                "デフォルトのシステムプロンプト設定中にエラーが発生しました。"
-            )
-    
+
     @bot.tree.command(name="get_default_prompt", description="現在のデフォルトシステムプロンプトを表示します")
     async def get_default_prompt(interaction: discord.Interaction):
         prompt = get_default_system_prompt()
@@ -1563,7 +1592,7 @@ try:
                     logger.debug(
                         f"録音開始通知をテキストチャンネル「{text_channel.name}」に送信しました"
                     )
-                    
+
                     # Idle avatar display
                     avatar = get_avatar()
                     await avatar.send_avatar_to_channel(
@@ -1675,7 +1704,7 @@ try:
 
             # LLM応答（システムプロンプトでカスタマイズ）
             logger.info(f"AI応答生成開始: ユーザー「{username}」の質問「{text}」")
-            
+
             # Send "thinking" avatar if we have a text channel
             if text_channel:
                 avatar = get_avatar()
@@ -1684,7 +1713,7 @@ try:
                     state=AVATAR_STATE_THINKING,
                     text=f"「{text[:20]}...」について考えています..."
                 )
-                
+
             start_time = time.time()
             response = await aiavatar.llm.chat(
                 text, history=history, system_prompt=system_prompt
@@ -1726,7 +1755,7 @@ try:
                     await text_channel.send(
                         f"**{member.display_name}**: {text}\n**AI**: {response}"
                     )
-                    
+
                     # Send "talking" avatar
                     avatar = get_avatar()
                     await avatar.send_avatar_to_channel(
@@ -1734,7 +1763,7 @@ try:
                         state=AVATAR_STATE_TALKING,
                         text=response[:50] + ("..." if len(response) > 50 else "")
                     )
-                    
+
                     logger.info(
                         f"テキストチャンネル「{text_channel.name}」に会話内容を送信しました"
                     )

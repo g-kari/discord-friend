@@ -84,6 +84,15 @@ Discord AI Voice Botには、以下のような主要機能があります：
 
 以下のコマンドはDiscordのスラッシュコマンド機能を使用して実行できます：
 
+- `/join` - ボイスチャンネルに参加
+- `/leave` - ボイスチャンネルから退出
+- `/set_prompt <プロンプト>` - AIのシステムプロンプトを設定
+- `/set_default_prompt <プロンプト>` - AIのデフォルトシステムプロンプトを設定（管理者のみ）
+  - `add_to_config:true` - 設定を.envファイルに永続的に保存
+- `/recording_on [キーワード]` - 録音をオンにする
+- `/recording_off` - 録音をオフにする
+- `/history_clear` - 会話履歴をクリア
+- `/talk` - 会話を開始する
 - `/add_mcp_server` - 現在のボイスチャンネルをMCPサーバーリストに追加
   - `add_to_config:true` - 設定を.envファイルに保存
 - `/list_mcp_servers` - 設定されているMCPサーバーとチャンネルの一覧を表示
