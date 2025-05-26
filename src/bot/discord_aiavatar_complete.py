@@ -1332,49 +1332,7 @@ try:
         # 会話処理を開始
         await trigger_ai_conversation(voice_client, interaction.user)
 
-    @bot.tree.command(name="set_default_prompt", description="AIのデフォルトシステムプロンプトを設定します")
-    @app_commands.describe(prompt="AIのデフォルトシステムプロンプト", add_to_config="設定ファイルに永続的に追加する場合はTrue")
-    async def set_default_prompt(interaction: discord.Interaction, prompt: str, add_to_config: bool = False):
-        # 管理者権限チェック
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("このコマンドは管理者のみが実行できます。")
-            return
-
-        try:
-            # グローバル変数の更新
-            config.DEFAULT_SYSTEM_PROMPT = prompt
-
-            # 設定ファイルに永続的に保存（オプション）
-            if add_to_config:
-                from utils import env_manager
-
-                # 環境変数ファイルを更新
-                result = env_manager.update_env_variable(
-                    key="DEFAULT_SYSTEM_PROMPT", value=prompt
-                )
-
-                if result:
-                    logger.info(f"デフォルトシステムプロンプトを.envファイルに保存しました")
-                    await interaction.response.send_message(
-                        f"デフォルトシステムプロンプトを設定し、設定ファイルに永続的に保存しました。\n```{prompt}```"
-                    )
-                else:
-                    logger.warning(
-                        "デフォルトシステムプロンプトを保存する.envファイルが見つからないか、更新できませんでした"
-                    )
-                    await interaction.response.send_message(
-                        f"デフォルトシステムプロンプトを一時的に設定しましたが、設定ファイルが見つからないため永続的に保存できませんでした。\n```{prompt}```"
-                    )
-            else:
-                await interaction.response.send_message(
-                    f"デフォルトシステムプロンプトを一時的に設定しました。ボット再起動後にリセットされます。\n```{prompt}```"
-                )
-        except Exception as e:
-            logger.error(f"デフォルトシステムプロンプト設定中にエラーが発生しました: {e}")
-            await interaction.response.send_message(
-                f"デフォルトシステムプロンプトの設定中にエラーが発生しました: {str(e)}"
-            )
-
+    
     # 管理者ダッシュボード：ユーザー一覧
     @bot.tree.command(
         name="admin_list_users",
@@ -1386,14 +1344,14 @@ try:
 
         try:
             await interaction.response.defer(ephemeral=True)
-
+            
             # ユーザーリストを取得
             users = get_all_users()
-
+            
             if not users:
                 await interaction.followup.send("登録されているユーザーはいません。", ephemeral=True)
                 return
-
+            
             # ユーザー情報を収集
             user_info = []
             for user_id in users:
@@ -1401,10 +1359,10 @@ try:
                     # Discordからユーザー情報を取得
                     discord_user = await bot.fetch_user(user_id)
                     user_name = f"{discord_user.name}#{discord_user.discriminator}" if discord_user else f"Unknown ({user_id})"
-
+                    
                     # データベースからユーザー設定を取得
                     settings = get_user_settings(user_id)
-
+                    
                     user_info.append({
                         "id": user_id,
                         "name": user_name,
@@ -1417,7 +1375,7 @@ try:
                         "name": f"Unknown ({user_id})",
                         "error": str(e)
                     })
-
+            
             # ユーザーリストを構築
             response = "## 登録ユーザー一覧\n\n"
             for user in user_info:
@@ -1431,7 +1389,7 @@ try:
                     response += f"- キーワードトリガー: {settings['keyword'] if settings['keyword'] else 'なし'}\n"
                     response += f"- メッセージ数: {settings['message_count']}\n"
                 response += "\n"
-
+            
             # 長すぎる場合は分割して送信
             if len(response) > 1900:
                 chunks = [response[i:i+1900] for i in range(0, len(response), 1900)]
@@ -1442,7 +1400,7 @@ try:
                         await interaction.followup.send(chunk, ephemeral=True)
             else:
                 await interaction.followup.send(response, ephemeral=True)
-
+        
         except Exception as e:
             logger.error(f"管理者ダッシュボードのユーザーリスト表示中にエラー発生: {e}")
             await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
@@ -1457,26 +1415,26 @@ try:
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_reset_user(interaction: discord.Interaction, user_id: str):
         from models.database import reset_user_settings
-
+        
         try:
             await interaction.response.defer(ephemeral=True)
-
+            
             try:
                 user_id_int = int(user_id)
             except ValueError:
                 await interaction.followup.send("ユーザーIDは数値である必要があります。", ephemeral=True)
                 return
-
+            
             # ユーザーが存在するか確認
             try:
                 discord_user = await bot.fetch_user(user_id_int)
                 user_name = f"{discord_user.name}#{discord_user.discriminator}"
             except:
                 user_name = f"Unknown ({user_id_int})"
-
+            
             # ユーザー設定をリセット
             success = reset_user_settings(user_id_int)
-
+            
             if success:
                 await interaction.followup.send(
                     f"ユーザー {user_name} の設定を正常にリセットしました。", ephemeral=True
@@ -1485,7 +1443,7 @@ try:
                 await interaction.followup.send(
                     f"ユーザー {user_name} の設定リセット中にエラーが発生しました。", ephemeral=True
                 )
-
+        
         except Exception as e:
             logger.error(f"ユーザー設定のリセット中にエラー発生: {e}")
             await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
@@ -1499,27 +1457,27 @@ try:
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_db_stats(interaction: discord.Interaction):
         from models.database import get_database_stats
-
+        
         try:
             await interaction.response.defer(ephemeral=True)
-
+            
             # データベース統計を取得
             stats = get_database_stats()
-
+            
             response = "## データベース統計\n\n"
             response += f"- 会話履歴数: {stats['history_count']}メッセージ\n"
             response += f"- ユニークユーザー数: {stats['unique_users']}ユーザー\n"
             response += f"- カスタムプロンプト数: {stats['prompt_count']}\n"
             response += f"- 録音設定数: {stats['recording_settings_count']}\n"
-
+            
             if stats['oldest_message']:
                 response += f"- 最も古いメッセージ: {stats['oldest_message']}\n"
-
+            
             if stats['newest_message']:
                 response += f"- 最も新しいメッセージ: {stats['newest_message']}\n"
-
+            
             await interaction.followup.send(response, ephemeral=True)
-
+        
         except Exception as e:
             logger.error(f"データベース統計の表示中にエラー発生: {e}")
             await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
@@ -1534,17 +1492,17 @@ try:
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_prune_history(interaction: discord.Interaction, days: int):
         from models.database import prune_old_conversations
-
+        
         try:
             await interaction.response.defer(ephemeral=True)
-
+            
             if days <= 0:
                 await interaction.followup.send("日数は1以上の正の整数を指定してください。", ephemeral=True)
                 return
-
+            
             # 古い会話を削除
             deleted_count = prune_old_conversations(days)
-
+            
             if deleted_count >= 0:
                 await interaction.followup.send(
                     f"{days}日より古い会話履歴を{deleted_count}件削除しました。", ephemeral=True
@@ -1553,7 +1511,7 @@ try:
                 await interaction.followup.send(
                     "会話履歴の削除中にエラーが発生しました。", ephemeral=True
                 )
-
+        
         except Exception as e:
             logger.error(f"古い会話履歴の削除中にエラー発生: {e}")
             await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
