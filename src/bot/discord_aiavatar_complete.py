@@ -1039,7 +1039,7 @@ try:
 
             # 設定ファイルに永続的に保存（オプション）
             if add_to_config:
-                from utils import env_manager
+                from src.bot.utils import env_manager
 
                 # 環境変数ファイルを更新
                 result = env_manager.update_env_variable(
