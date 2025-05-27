@@ -1,0 +1,3 @@
+[submodule "pyaudio"]
+	path = pyaudio
+	url = https://github.com/jleb/pyaudio.git
