@@ -175,15 +175,15 @@ class GitSecretScanner:
         
         for i, commit in enumerate(self.findings):
             print(f"Commit: {commit['hash']}")
-            print(f"Author: {commit['author']}")
+            print("Author: [REDACTED]")
             print(f"Date:   {commit['date']}")
             print("\nSecrets found:")
             
             for secret in commit['secrets']:
-                print(f"  - Type: {secret['type']}")
+                masked_type = "Sensitive Type"
+                print(f"  - Type: {masked_type}")
                 # Mask the actual value in the output
-                masked_value = secret['value'][:4] + '****' + secret['value'][-4:] if len(secret['value']) > 8 else '****'
-                print(f"    Value: {masked_value}")
+                print(f"    Value: [REDACTED]")
             
             if i < len(self.findings) - 1:
                 print(f"\n{'-' * 80}\n")
