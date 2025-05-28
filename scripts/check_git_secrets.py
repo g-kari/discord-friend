@@ -182,8 +182,7 @@ class GitSecretScanner:
             for secret in commit['secrets']:
                 print(f"  - Type: {secret['type']}")
                 # Mask the actual value in the output
-                masked_value = secret['value'][:4] + '****' + secret['value'][-4:] if len(secret['value']) > 8 else '****'
-                print(f"    Value: {masked_value}")
+                print(f"    Value: [REDACTED]")
             
             if i < len(self.findings) - 1:
                 print(f"\n{'-' * 80}\n")
