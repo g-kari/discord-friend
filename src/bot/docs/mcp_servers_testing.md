@@ -1,85 +1,85 @@
-# MCP Server Auto-Join Feature - Testing Guide
+# MCPサーバー自動接続機能 - テストガイド
 
-This document provides instructions for testing the MCP server auto-join functionality.
+このドキュメントは、MCPサーバー自動接続機能のテスト手順を提供します。
 
-## Environment Setup
+## 環境設定
 
-1. Create a `.env` file with the following configuration:
+1. 以下の設定で `.env` ファイルを作成：
    ```
    DISCORD_BOT_TOKEN=your_bot_token
    DIFY_API_KEY=your_dify_api_key
    OPENAI_API_KEY=your_openai_api_key
-   MCP_SERVERS={"Server Name": ["Voice Channel 1", "Voice Channel 2"]}
+   MCP_SERVERS={"サーバー名": ["ボイスチャンネル1", "ボイスチャンネル2"]}
    ```
 
-   Note: Replace "Server Name" with the actual name of your Discord server, and "Voice Channel 1", "Voice Channel 2" with the names of the voice channels you want the bot to join automatically.
+   注意：「サーバー名」を実際のDiscordサーバー名に、「ボイスチャンネル1」「ボイスチャンネル2」をボットが自動的に参加するボイスチャンネル名に置き換えてください。
 
-## Test Cases
+## テストケース
 
-### 1. Basic Auto-Join
+### 1. 基本的な自動接続
 
-**Steps:**
-1. Configure the MCP_SERVERS environment variable as shown above
-2. Start the bot
-3. Check the logs for auto-join messages
+**手順:**
+1. 上記のようにMCP_SERVERS環境変数を設定
+2. ボットを起動
+3. ログで自動接続メッセージを確認
 
-**Expected Result:**
-- Bot should log "MCPサーバーへの自動接続を開始します"
-- Bot should attempt to join the specified channels
-- For successful connections, bot should log "ボイスチャンネル「Channel Name」に自動接続しました"
+**期待される結果:**
+- ボットは「MCPサーバーへの自動接続を開始します」をログに記録するはず
+- ボットは指定されたチャンネルへの接続を試みるはず
+- 接続成功時、ボットは「ボイスチャンネル「チャンネル名」に自動接続しました」をログに記録するはず
 
-### 2. Invalid Channel Names
+### 2. 無効なチャンネル名
 
-**Steps:**
-1. Configure MCP_SERVERS with non-existent channel names
-2. Start the bot
+**手順:**
+1. 存在しないチャンネル名でMCP_SERVERSを設定
+2. ボットを起動
 
-**Expected Result:**
-- Bot should log warning messages about channels not found
-- Bot should continue operating normally despite the errors
+**期待される結果:**
+- ボットはチャンネルが見つからないという警告メッセージをログに記録するはず
+- エラーがあってもボットは正常に動作し続けるはず
 
-### 3. Command Tests
+### 3. コマンドテスト
 
-#### /add_mcp_server Command
+#### /add_mcp_server コマンド
 
-**Steps:**
-1. Join a voice channel
-2. Execute `/add_mcp_server` command
-3. Execute `/add_mcp_server add_to_config:true` command
+**手順:**
+1. ボイスチャンネルに参加
+2. `/add_mcp_server` コマンドを実行
+3. `/add_mcp_server add_to_config:true` コマンドを実行
 
-**Expected Result:**
-- First command should add the channel to the in-memory list
-- Second command should add the channel to the .env file
-- Bot should confirm the action with a message
+**期待される結果:**
+- 最初のコマンドはチャンネルをメモリ内リストに追加するはず
+- 2番目のコマンドはチャンネルを.envファイルに追加するはず
+- ボットはアクションを確認するメッセージで応答するはず
 
-#### /list_mcp_servers Command
+#### /list_mcp_servers コマンド
 
-**Steps:**
-1. Configure some MCP servers
-2. Execute `/list_mcp_servers` command
+**手順:**
+1. いくつかのMCPサーバーを設定
+2. `/list_mcp_servers` コマンドを実行
 
-**Expected Result:**
-- Bot should respond with a list of servers and channels in the auto-join list
+**期待される結果:**
+- ボットは自動接続リスト内のサーバーとチャンネルのリストで応答するはず
 
-#### /remove_mcp_server Command
+#### /remove_mcp_server コマンド
 
-**Steps:**
-1. Configure some MCP servers
-2. Execute `/remove_mcp_server` command (uses current server and channel)
-3. Execute `/remove_mcp_server server_name:"Server Name" channel_name:"Channel Name"` command
-4. Execute `/remove_mcp_server remove_from_config:true` command
+**手順:**
+1. いくつかのMCPサーバーを設定
+2. `/remove_mcp_server` コマンドを実行（現在のサーバーとチャンネルを使用）
+3. `/remove_mcp_server server_name:"サーバー名" channel_name:"チャンネル名"` コマンドを実行
+4. `/remove_mcp_server remove_from_config:true` コマンドを実行
 
-**Expected Result:**
-- First command should remove the current channel from the in-memory list
-- Second command should remove the specified channel from the specified server
-- Third command should remove the channel and update the .env file
-- Bot should confirm each action with a message
+**期待される結果:**
+- 最初のコマンドは現在のチャンネルをメモリ内リストから削除するはず
+- 2番目のコマンドは指定されたサーバーから指定されたチャンネルを削除するはず
+- 3番目のコマンドはチャンネルを削除し.envファイルを更新するはず
+- ボットは各アクションを確認するメッセージで応答するはず
 
-## Troubleshooting
+## トラブルシューティング
 
-If the auto-join feature is not working as expected:
+自動接続機能が期待通りに動作しない場合：
 
-1. Check the bot logs for any error messages
-2. Verify that the JSON format in the MCP_SERVERS environment variable is correct
-3. Make sure the bot has permissions to join the specified voice channels
-4. Confirm that the server and channel names match exactly (case-sensitive)
+1. ボットのログでエラーメッセージを確認
+2. MCP_SERVERS環境変数のJSON形式が正しいことを確認
+3. ボットが指定されたボイスチャンネルに参加する権限を持っていることを確認
+4. サーバー名とチャンネル名が完全に一致していることを確認（大文字小文字区別）
