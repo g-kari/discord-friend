@@ -180,7 +180,8 @@ class GitSecretScanner:
             print("\nSecrets found:")
             
             for secret in commit['secrets']:
-                print(f"  - Type: {secret['type']}")
+                masked_type = "Sensitive Type"
+                print(f"  - Type: {masked_type}")
                 # Mask the actual value in the output
                 print(f"    Value: [REDACTED]")
             
