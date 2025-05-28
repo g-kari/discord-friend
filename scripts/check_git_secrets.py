@@ -175,7 +175,7 @@ class GitSecretScanner:
         
         for i, commit in enumerate(self.findings):
             print(f"Commit: {commit['hash']}")
-            print(f"Author: {commit['author']}")
+            print("Author: [REDACTED]")
             print(f"Date:   {commit['date']}")
             print("\nSecrets found:")
             
