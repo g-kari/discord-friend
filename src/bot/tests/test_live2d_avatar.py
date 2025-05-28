@@ -2,7 +2,7 @@ import os
 import sys
 import unittest
 from io import BytesIO
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 from PIL import Image
@@ -11,10 +11,10 @@ from PIL import Image
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.avatar.live2d_service import (
-    Live2DAvatar,
     AVATAR_STATE_IDLE,
     AVATAR_STATE_TALKING,
     AVATAR_STATE_THINKING,
+    Live2DAvatar,
 )
 
 

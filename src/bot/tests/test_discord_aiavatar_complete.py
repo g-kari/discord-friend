@@ -220,11 +220,8 @@ class TestDatabaseFunctions(unittest.TestCase):
             row = cursor.fetchone()
             # Use the patched DEFAULT_SYSTEM_PROMPT from config
             from src.bot import config
-            return (
-                row[0]
-                if row
-                else config.DEFAULT_SYSTEM_PROMPT
-            )
+
+            return row[0] if row else config.DEFAULT_SYSTEM_PROMPT
 
         # Test with our direct DB connection
         user_id = "user1"

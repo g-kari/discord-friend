@@ -2,11 +2,11 @@
 AIAvatarKit連携のサービスモジュール
 """
 
+import asyncio
 import logging
 import os
 import random
 import sys
-import asyncio
 
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -150,7 +150,7 @@ async def create_cushion_task(channel):
         (asyncio.Task, asyncio.Event): タスクとキャンセルイベントのタプル
     """
     cancel_event = asyncio.Event()
-    
+
     async def cushion_sender():
         sent_messages = []
         try:
@@ -171,7 +171,7 @@ async def create_cushion_task(channel):
                     await asyncio.sleep(2.0)  # エラー時も少し待機
         finally:
             return sent_messages
-    
+
     # クッション送信タスクを作成して返す
     task = asyncio.create_task(cushion_sender())
     return task, cancel_event
@@ -242,7 +242,7 @@ async def send_conversation_cushions(channel, interval=2.0, max_cushions=3):
         送信したクッションのメッセージのリスト
     """
     sent_messages = []
-    
+
     # 最大回数までクッションを送信
     for i in range(max_cushions):
         try:
@@ -253,5 +253,5 @@ async def send_conversation_cushions(channel, interval=2.0, max_cushions=3):
         except Exception as e:
             logger.error(f"会話クッション送信エラー: {e}")
             break
-    
+
     return sent_messages

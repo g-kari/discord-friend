@@ -1,18 +1,19 @@
 import asyncio
 import os
 import unittest
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Assuming ai_service.py is in src.bot.services
 from src.bot.services.ai_service import (
     check_keyword_match,
+    create_cushion_task,
     get_ai_response,
     get_random_conversation_cushion,
     send_conversation_cushions,
     text_to_speech,
     transcribe_audio,
-    create_cushion_task,
 )
 
 
@@ -63,9 +64,11 @@ class TestAIService(unittest.TestCase):
     @pytest.mark.asyncio
     @patch("src.bot.services.ai_service.aiavatar")
     @patch("src.bot.services.ai_service.create_cushion_task")
-    async def test_get_ai_response_success(self, mock_create_cushion_task, mock_aiavatar):
+    async def test_get_ai_response_success(
+        self, mock_create_cushion_task, mock_aiavatar
+    ):
         mock_aiavatar.llm.chat = AsyncMock(return_value="AI response")
-        
+
         # Mock cushion task
         mock_task = AsyncMock()
         mock_cancel_event = MagicMock()
@@ -88,9 +91,11 @@ class TestAIService(unittest.TestCase):
     @pytest.mark.asyncio
     @patch("src.bot.services.ai_service.aiavatar")
     @patch("src.bot.services.ai_service.create_cushion_task")
-    async def test_get_ai_response_failure(self, mock_create_cushion_task, mock_aiavatar):
+    async def test_get_ai_response_failure(
+        self, mock_create_cushion_task, mock_aiavatar
+    ):
         mock_aiavatar.llm.chat = AsyncMock(side_effect=Exception("LLM Error"))
-        
+
         # Mock cushion task
         mock_task = AsyncMock()
         mock_cancel_event = MagicMock()
@@ -155,53 +160,60 @@ class TestAIService(unittest.TestCase):
             self.assertIsInstance(cushion, str)
             self.assertTrue(len(cushion) > 0)
             # Values should be from our predefined list
-            self.assertIn(cushion, [
-                "あー",
-                "えー",
-                "うーん",
-                "そうですね",
-                "えーと",
-                "んー",
-                "ちょっと待ってください",
-                "考え中です",
-                "少々お待ちください",
-            ])
+            self.assertIn(
+                cushion,
+                [
+                    "あー",
+                    "えー",
+                    "うーん",
+                    "そうですね",
+                    "えーと",
+                    "んー",
+                    "ちょっと待ってください",
+                    "考え中です",
+                    "少々お待ちください",
+                ],
+            )
 
     @pytest.mark.asyncio
-    @patch('src.bot.services.ai_service.asyncio.sleep')
+    @patch("src.bot.services.ai_service.asyncio.sleep")
     async def test_send_conversation_cushions(self, mock_sleep):
         # Mock asyncio.sleep to speed up testing
         mock_sleep.side_effect = lambda _: asyncio.sleep(0)
-        
+
         # Create a mock channel
         mock_channel = MagicMock()
         mock_channel.send = AsyncMock()
-        
+
         # Call our function
-        result = await send_conversation_cushions(mock_channel, interval=0.1, max_cushions=2)
-        
+        result = await send_conversation_cushions(
+            mock_channel, interval=0.1, max_cushions=2
+        )
+
         # Check results
         self.assertEqual(len(result), 2)  # Should have 2 sent messages
-        self.assertEqual(mock_channel.send.call_count, 2)  # send() should be called twice
+        self.assertEqual(
+            mock_channel.send.call_count, 2
+        )  # send() should be called twice
         mock_sleep.assert_called()  # sleep should have been called
 
     @pytest.mark.asyncio
-    @patch('src.bot.services.ai_service.asyncio.create_task')
-    @patch('src.bot.services.ai_service.asyncio.Event')
+    @patch("src.bot.services.ai_service.asyncio.create_task")
+    @patch("src.bot.services.ai_service.asyncio.Event")
     async def test_create_cushion_task(self, mock_event, mock_create_task):
         # Mock the asyncio Event
         mock_event_instance = MagicMock()
         mock_event.return_value = mock_event_instance
-        
+
         # Mock create_task
         mock_task = MagicMock()
         mock_create_task.return_value = mock_task
-        
+
         # Mock channel
         mock_channel = MagicMock()
-        
+
         task, cancel_event = await create_cushion_task(mock_channel)
-        
+
         # Verify results
         self.assertEqual(task, mock_task)
         self.assertEqual(cancel_event, mock_event_instance)
