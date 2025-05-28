@@ -180,7 +180,7 @@ class GitSecretScanner:
             print("\nSecrets found:")
             
             for secret in commit['secrets']:
-                masked_type = secret['type'][:2] + '****' if len(secret['type']) > 4 else '****'
+                masked_type = "Sensitive Type"
                 print(f"  - Type: {masked_type}")
                 # Mask the actual value in the output
                 masked_value = secret['value'][:4] + '****' + secret['value'][-4:] if len(secret['value']) > 8 else '****'
