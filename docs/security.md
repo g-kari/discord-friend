@@ -38,7 +38,7 @@ import os
 token = os.getenv("DISCORD_BOT_TOKEN")
 
 # 悪い例
-token = "MTExNjI3NzQ2NTE2MDUyOTky.Gkz30r.M35NTI0MzU-VacytCoXt" # これはダミーです
+token = "YOUR_BOT_TOKEN_HERE"  # 実際のトークンをここに直接書かないでください
 ```
 
 ### 2. .env ファイルの使用
