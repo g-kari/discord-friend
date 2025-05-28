@@ -175,8 +175,7 @@ class GitSecretScanner:
         
         for i, commit in enumerate(self.findings):
             print(f"Commit: {commit['hash']}")
-            sanitized_author = commit['author'].split('@')[0] if '@' in commit['author'] else commit['author']
-            print(f"Author: {sanitized_author} (sanitized)")
+            print("Author: [REDACTED]")
             print(f"Date:   {commit['date']}")
             print("\nSecrets found:")
             
