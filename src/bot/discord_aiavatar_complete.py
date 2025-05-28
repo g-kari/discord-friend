@@ -18,11 +18,16 @@ import soundfile as sf
 from discord import FFmpegPCMAudio, VoiceClient, app_commands
 from discord.ext import commands
 
+# Import our Live2D avatar service
+from services.avatar import (
+    AVATAR_STATE_IDLE,
+    AVATAR_STATE_TALKING,
+    AVATAR_STATE_THINKING,
+    get_avatar,
+)
+
 # Import config
 from src.bot import config
-
-# Import our Live2D avatar service
-from services.avatar import get_avatar, AVATAR_STATE_IDLE, AVATAR_STATE_TALKING, AVATAR_STATE_THINKING
 
 # Conditionally import dependencies to handle missing packages in test environments
 try:
@@ -450,7 +455,11 @@ try:
 
             # This check is for traditional prefix commands.
             # The bot uses "!" as a prefix.
-            if isinstance(message.content, str) and isinstance(self.command_prefix, str) and message.content.startswith(self.command_prefix):
+            if (
+                isinstance(message.content, str)
+                and isinstance(self.command_prefix, str)
+                and message.content.startswith(self.command_prefix)
+            ):
                 logger.debug(
                     f"Message starts with command prefix '{self.command_prefix}', ignoring for on_message handler."
                 )
@@ -459,10 +468,17 @@ try:
                 # However, usually, commands are handled by their own decorators.
 
                 # Special case for set_default_prompt text command (needs to be here to handle admin permissions)
-                if message.content.startswith(f"{self.command_prefix}set_default_prompt "):
+                if message.content.startswith(
+                    f"{self.command_prefix}set_default_prompt "
+                ):
                     # Check if the user is an admin
-                    if isinstance(message.author, discord.Member) and message.author.guild_permissions.administrator:
-                        prompt = message.content[len(f"{self.command_prefix}set_default_prompt "):]
+                    if (
+                        isinstance(message.author, discord.Member)
+                        and message.author.guild_permissions.administrator
+                    ):
+                        prompt = message.content[
+                            len(f"{self.command_prefix}set_default_prompt ") :
+                        ]
                         if set_default_system_prompt(prompt):
                             await message.channel.send(
                                 f"デフォルトのシステムプロンプトを設定しました。\n```{prompt}```"
@@ -472,9 +488,14 @@ try:
                                 "デフォルトのシステムプロンプト設定中にエラーが発生しました。"
                             )
                     else:
-                        await message.channel.send("このコマンドは管理者のみ使用できます。")
+                        await message.channel.send(
+                            "このコマンドは管理者のみ使用できます。"
+                        )
                 # Check for get_default_prompt command
-                elif message.content.strip() == f"{self.command_prefix}get_default_prompt":
+                elif (
+                    message.content.strip()
+                    == f"{self.command_prefix}get_default_prompt"
+                ):
                     prompt = get_default_system_prompt()
                     await message.channel.send(
                         f"現在のデフォルトシステムプロンプト：\n```{prompt}```"
@@ -495,7 +516,11 @@ try:
                     voice_client_in_guild = vc
                     break
 
-            if voice_client_in_guild and isinstance(voice_client_in_guild, VoiceClient) and voice_client_in_guild.is_connected():
+            if (
+                voice_client_in_guild
+                and isinstance(voice_client_in_guild, VoiceClient)
+                and voice_client_in_guild.is_connected()
+            ):
                 logger.info(
                     f"Bot is in a voice channel in guild '{message.guild.name}'. Processing message from '{message.author.name}': '{message.content}'"
                 )
@@ -532,13 +557,16 @@ try:
                         )
                     else:
                         # message.channelを渡して会話のクッションを送信
-                        logger.info(f"LLM API呼び出し開始: {username}からの入力に対して生成中...")
+                        logger.info(
+                            f"LLM API呼び出し開始: {username}からの入力に対して生成中..."
+                        )
                         from services.ai_service import get_ai_response
+
                         llm_response_text = await get_ai_response(
                             text=message.content,
                             history=history,  # History up to the previous turn
                             system_prompt=system_prompt,
-                            channel=message.channel
+                            channel=message.channel,
                         )
                     elapsed = time.time() - start_time
                     logger.info(
@@ -555,20 +583,41 @@ try:
                         # Send the AI's textual response back to the channel
                         try:
                             channel_name = "unknown"
-                            if isinstance(message.channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
+                            if isinstance(
+                                message.channel,
+                                (
+                                    discord.TextChannel,
+                                    discord.VoiceChannel,
+                                    discord.StageChannel,
+                                ),
+                            ):
                                 channel_name = message.channel.name
                             logger.info(
                                 f'Sending AI response to channel {channel_name} for user {username}: "{ai_response[:50]}..."'
                             )
                             await message.channel.send(ai_response)
-                            if isinstance(message.channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
+                            if isinstance(
+                                message.channel,
+                                (
+                                    discord.TextChannel,
+                                    discord.VoiceChannel,
+                                    discord.StageChannel,
+                                ),
+                            ):
                                 channel_name = message.channel.name
                             logger.debug(
                                 f"Successfully sent AI response to channel {channel_name} for {username}."
                             )
                         except discord.DiscordException as e:
                             channel_name = "unknown"
-                            if isinstance(message.channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
+                            if isinstance(
+                                message.channel,
+                                (
+                                    discord.TextChannel,
+                                    discord.VoiceChannel,
+                                    discord.StageChannel,
+                                ),
+                            ):
                                 channel_name = message.channel.name
                             logger.error(
                                 f"Failed to send AI response to channel {channel_name} for {username}: {e}"
@@ -578,7 +627,14 @@ try:
                             Exception
                         ) as e:  # Catch any other unexpected errors during send
                             channel_name = "unknown"
-                            if isinstance(message.channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
+                            if isinstance(
+                                message.channel,
+                                (
+                                    discord.TextChannel,
+                                    discord.VoiceChannel,
+                                    discord.StageChannel,
+                                ),
+                            ):
                                 channel_name = message.channel.name
                             logger.error(
                                 f"Unexpected error sending AI response to channel {channel_name} for {username}: {e}"
@@ -610,7 +666,10 @@ try:
                                 else:
                                     # 会話クッションを送信しながらTTS実行
                                     from services.ai_service import create_cushion_task
-                                    cushion_task, cancel_event = await create_cushion_task(message.channel)
+
+                                    cushion_task, cancel_event = (
+                                        await create_cushion_task(message.channel)
+                                    )
                                     try:
                                         tts_audio_data = await aiavatar.tts.speak(
                                             ai_response
@@ -634,7 +693,10 @@ try:
                                 )
 
                                 # 3. Play Audio
-                                if isinstance(voice_client_in_guild, VoiceClient) and voice_client_in_guild.is_playing():
+                                if (
+                                    isinstance(voice_client_in_guild, VoiceClient)
+                                    and voice_client_in_guild.is_playing()
+                                ):
                                     logger.warning(
                                         f"Voice client is currently playing audio for {username}. Stopping previous audio."
                                     )
@@ -651,7 +713,10 @@ try:
                                 )
 
                                 # Wait for playback to finish
-                                while isinstance(voice_client_in_guild, VoiceClient) and voice_client_in_guild.is_playing():
+                                while (
+                                    isinstance(voice_client_in_guild, VoiceClient)
+                                    and voice_client_in_guild.is_playing()
+                                ):
                                     await asyncio.sleep(0.1)
                                 logger.info(
                                     f"Finished playing TTS audio for {username}."
@@ -952,12 +1017,16 @@ try:
                 voice_client: discord.VoiceClient = await channel.connect()
 
                 # 音声受信を開始（リッスンモード）
-                if hasattr(voice_client, 'listen'):  # Type check
+                if hasattr(voice_client, "listen"):  # Type check
                     voice_client.listen(audio_sink)  # type: ignore
-                    setattr(voice_client, 'sink', audio_sink)  # Use setattr instead of direct assignment
+                    setattr(
+                        voice_client, "sink", audio_sink
+                    )  # Use setattr instead of direct assignment
 
-                channel_name = channel.name if hasattr(channel, 'name') else "unknown"
-                logger.info(f"ボイスチャンネル「{channel_name}」で音声受信を開始しました")
+                channel_name = channel.name if hasattr(channel, "name") else "unknown"
+                logger.info(
+                    f"ボイスチャンネル「{channel_name}」で音声受信を開始しました"
+                )
 
             # チャンネル参加時に自動的に録音設定をオンに
             set_recording_enabled(interaction.user.id, True)
@@ -966,7 +1035,7 @@ try:
             )
 
             # チャンネル内の全ユーザーの録音設定をオンに
-            if channel is not None and hasattr(channel, 'members'):
+            if channel is not None and hasattr(channel, "members"):
                 for member in channel.members:
                     if not member.bot:  # ボットは除外
                         set_recording_enabled(member.id, True)
@@ -997,7 +1066,7 @@ try:
                             await avatar.send_avatar_to_channel(
                                 channel,
                                 state=AVATAR_STATE_IDLE,
-                                text="さようなら！またね！"
+                                text="さようなら！またね！",
                             )
                             break
                 except Exception as e:
@@ -1026,14 +1095,22 @@ try:
             f"システムプロンプトを設定しました。\n```{prompt}```"
         )
 
-    @bot.tree.command(name="set_default_prompt", description="AIのデフォルトシステムプロンプトを設定します（管理者のみ）")
-    @app_commands.describe(prompt="デフォルトのシステムプロンプト", add_to_config="設定ファイルに永続的に追加する場合はTrue")
+    @bot.tree.command(
+        name="set_default_prompt",
+        description="AIのデフォルトシステムプロンプトを設定します（管理者のみ）",
+    )
+    @app_commands.describe(
+        prompt="デフォルトのシステムプロンプト",
+        add_to_config="設定ファイルに永続的に追加する場合はTrue",
+    )
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_default_prompt(interaction: discord.Interaction, prompt: str, add_to_config: bool = False):
+    async def set_default_prompt(
+        interaction: discord.Interaction, prompt: str, add_to_config: bool = False
+    ):
         try:
             # グローバル変数の更新
             config.DEFAULT_SYSTEM_PROMPT = prompt
-            
+
             # データベースに設定
             set_default_system_prompt(prompt)
 
@@ -1047,7 +1124,9 @@ try:
                 )
 
                 if result:
-                    logger.info(f"デフォルトシステムプロンプトを.envファイルに保存しました")
+                    logger.info(
+                        f"デフォルトシステムプロンプトを.envファイルに保存しました"
+                    )
                     await interaction.response.send_message(
                         f"デフォルトシステムプロンプトを設定し、設定ファイルに永続的に保存しました。\n```{prompt}```"
                     )
@@ -1063,12 +1142,17 @@ try:
                     f"デフォルトシステムプロンプトを一時的に設定しました。ボット再起動後にリセットされます。\n```{prompt}```"
                 )
         except Exception as e:
-            logger.error(f"デフォルトシステムプロンプト設定中にエラーが発生しました: {e}")
+            logger.error(
+                f"デフォルトシステムプロンプト設定中にエラーが発生しました: {e}"
+            )
             await interaction.response.send_message(
                 f"デフォルトシステムプロンプトの設定中にエラーが発生しました: {str(e)}"
             )
 
-    @bot.tree.command(name="get_default_prompt", description="現在のデフォルトシステムプロンプトを表示します")
+    @bot.tree.command(
+        name="get_default_prompt",
+        description="現在のデフォルトシステムプロンプトを表示します",
+    )
     async def get_default_prompt(interaction: discord.Interaction):
         prompt = get_default_system_prompt()
         await interaction.response.send_message(
@@ -1132,7 +1216,11 @@ try:
             )
             return
 
-        if not isinstance(interaction.user, discord.Member) or not interaction.user.voice or not interaction.user.voice.channel:
+        if (
+            not isinstance(interaction.user, discord.Member)
+            or not interaction.user.voice
+            or not interaction.user.voice.channel
+        ):
             await interaction.response.send_message(
                 "先にボイスチャンネルに参加してください。"
             )
@@ -1144,7 +1232,11 @@ try:
 
             guild_name = interaction.guild.name
             channel_name = ""
-            if isinstance(interaction.user, discord.Member) and interaction.user.voice and interaction.user.voice.channel:
+            if (
+                isinstance(interaction.user, discord.Member)
+                and interaction.user.voice
+                and interaction.user.voice.channel
+            ):
                 channel_name = interaction.user.voice.channel.name
 
             # メモリ上の設定を更新
@@ -1245,7 +1337,11 @@ try:
 
             # チャンネル名が指定されていない場合は、ユーザーが現在参加しているチャンネルを使用
             if not channel_name:
-                if not isinstance(interaction.user, discord.Member) or not interaction.user.voice or not interaction.user.voice.channel:
+                if (
+                    not isinstance(interaction.user, discord.Member)
+                    or not interaction.user.voice
+                    or not interaction.user.voice.channel
+                ):
                     await interaction.response.send_message(
                         "チャンネル名を指定するか、ボイスチャンネルに参加してください。"
                     )
@@ -1318,7 +1414,11 @@ try:
             return
 
         # ユーザーがボイスチャンネルにいるか確認
-        if not isinstance(interaction.user, discord.Member) or not interaction.user.voice or not interaction.user.voice.channel:
+        if (
+            not isinstance(interaction.user, discord.Member)
+            or not interaction.user.voice
+            or not interaction.user.voice.channel
+        ):
             await interaction.response.send_message(
                 "ボイスチャンネルに接続してから使用してください。"
             )
@@ -1337,7 +1437,11 @@ try:
             )
             return
 
-        if not isinstance(interaction.user, discord.Member) or not interaction.user.voice or voice_client.channel != interaction.user.voice.channel:
+        if (
+            not isinstance(interaction.user, discord.Member)
+            or not interaction.user.voice
+            or voice_client.channel != interaction.user.voice.channel
+        ):
             await interaction.response.send_message(
                 "ボットと同じボイスチャンネルに接続してください。"
             )
@@ -1349,9 +1453,11 @@ try:
                 from services.discord_audio import DiscordAudioSink
 
                 audio_sink = DiscordAudioSink()
-                if hasattr(voice_client, 'listen'):
+                if hasattr(voice_client, "listen"):
                     voice_client.listen(audio_sink)  # type: ignore
-                    setattr(voice_client, 'sink', audio_sink)  # Use setattr instead of direct assignment
+                    setattr(
+                        voice_client, "sink", audio_sink
+                    )  # Use setattr instead of direct assignment
                 logger.info(f"ボイスクライアントに音声シンクを設定しました")
 
         await interaction.response.send_message(
@@ -1361,7 +1467,6 @@ try:
         # 会話処理を開始
         await trigger_ai_conversation(voice_client, interaction.user)
 
-    
     # 管理者ダッシュボード：ユーザー一覧
     @bot.tree.command(
         name="admin_list_users",
@@ -1373,38 +1478,40 @@ try:
 
         try:
             await interaction.response.defer(ephemeral=True)
-            
+
             # ユーザーリストを取得
             users = get_all_users()
-            
+
             if not users:
-                await interaction.followup.send("登録されているユーザーはいません。", ephemeral=True)
+                await interaction.followup.send(
+                    "登録されているユーザーはいません。", ephemeral=True
+                )
                 return
-            
+
             # ユーザー情報を収集
             user_info = []
             for user_id in users:
                 try:
                     # Discordからユーザー情報を取得
                     discord_user = await bot.fetch_user(user_id)
-                    user_name = f"{discord_user.name}#{discord_user.discriminator}" if discord_user else f"Unknown ({user_id})"
-                    
+                    user_name = (
+                        f"{discord_user.name}#{discord_user.discriminator}"
+                        if discord_user
+                        else f"Unknown ({user_id})"
+                    )
+
                     # データベースからユーザー設定を取得
                     settings = get_user_settings(user_id)
-                    
-                    user_info.append({
-                        "id": user_id,
-                        "name": user_name,
-                        "settings": settings
-                    })
+
+                    user_info.append(
+                        {"id": user_id, "name": user_name, "settings": settings}
+                    )
                 except Exception as e:
                     logger.error(f"ユーザー情報の取得中にエラー発生: {e}")
-                    user_info.append({
-                        "id": user_id,
-                        "name": f"Unknown ({user_id})",
-                        "error": str(e)
-                    })
-            
+                    user_info.append(
+                        {"id": user_id, "name": f"Unknown ({user_id})", "error": str(e)}
+                    )
+
             # ユーザーリストを構築
             response = "## 登録ユーザー一覧\n\n"
             for user in user_info:
@@ -1418,10 +1525,10 @@ try:
                     response += f"- キーワードトリガー: {settings['keyword'] if settings['keyword'] else 'なし'}\n"
                     response += f"- メッセージ数: {settings['message_count']}\n"
                 response += "\n"
-            
+
             # 長すぎる場合は分割して送信
             if len(response) > 1900:
-                chunks = [response[i:i+1900] for i in range(0, len(response), 1900)]
+                chunks = [response[i : i + 1900] for i in range(0, len(response), 1900)]
                 for i, chunk in enumerate(chunks):
                     if i == 0:
                         await interaction.followup.send(chunk, ephemeral=True)
@@ -1429,11 +1536,12 @@ try:
                         await interaction.followup.send(chunk, ephemeral=True)
             else:
                 await interaction.followup.send(response, ephemeral=True)
-        
+
         except Exception as e:
             logger.error(f"管理者ダッシュボードのユーザーリスト表示中にエラー発生: {e}")
-            await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
-
+            await interaction.followup.send(
+                f"エラーが発生しました: {e}", ephemeral=True
+            )
 
     # 管理者ダッシュボード：ユーザー設定リセット
     @bot.tree.command(
@@ -1444,39 +1552,44 @@ try:
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_reset_user(interaction: discord.Interaction, user_id: str):
         from models.database import reset_user_settings
-        
+
         try:
             await interaction.response.defer(ephemeral=True)
-            
+
             try:
                 user_id_int = int(user_id)
             except ValueError:
-                await interaction.followup.send("ユーザーIDは数値である必要があります。", ephemeral=True)
+                await interaction.followup.send(
+                    "ユーザーIDは数値である必要があります。", ephemeral=True
+                )
                 return
-            
+
             # ユーザーが存在するか確認
             try:
                 discord_user = await bot.fetch_user(user_id_int)
                 user_name = f"{discord_user.name}#{discord_user.discriminator}"
             except:
                 user_name = f"Unknown ({user_id_int})"
-            
+
             # ユーザー設定をリセット
             success = reset_user_settings(user_id_int)
-            
+
             if success:
                 await interaction.followup.send(
-                    f"ユーザー {user_name} の設定を正常にリセットしました。", ephemeral=True
+                    f"ユーザー {user_name} の設定を正常にリセットしました。",
+                    ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    f"ユーザー {user_name} の設定リセット中にエラーが発生しました。", ephemeral=True
+                    f"ユーザー {user_name} の設定リセット中にエラーが発生しました。",
+                    ephemeral=True,
                 )
-        
+
         except Exception as e:
             logger.error(f"ユーザー設定のリセット中にエラー発生: {e}")
-            await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
-
+            await interaction.followup.send(
+                f"エラーが発生しました: {e}", ephemeral=True
+            )
 
     # 管理者ダッシュボード：データベース統計
     @bot.tree.command(
@@ -1486,31 +1599,32 @@ try:
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_db_stats(interaction: discord.Interaction):
         from models.database import get_database_stats
-        
+
         try:
             await interaction.response.defer(ephemeral=True)
-            
+
             # データベース統計を取得
             stats = get_database_stats()
-            
+
             response = "## データベース統計\n\n"
             response += f"- 会話履歴数: {stats['history_count']}メッセージ\n"
             response += f"- ユニークユーザー数: {stats['unique_users']}ユーザー\n"
             response += f"- カスタムプロンプト数: {stats['prompt_count']}\n"
             response += f"- 録音設定数: {stats['recording_settings_count']}\n"
-            
-            if stats['oldest_message']:
+
+            if stats["oldest_message"]:
                 response += f"- 最も古いメッセージ: {stats['oldest_message']}\n"
-            
-            if stats['newest_message']:
+
+            if stats["newest_message"]:
                 response += f"- 最も新しいメッセージ: {stats['newest_message']}\n"
-            
+
             await interaction.followup.send(response, ephemeral=True)
-        
+
         except Exception as e:
             logger.error(f"データベース統計の表示中にエラー発生: {e}")
-            await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
-
+            await interaction.followup.send(
+                f"エラーが発生しました: {e}", ephemeral=True
+            )
 
     # 管理者ダッシュボード：古い会話履歴の削除
     @bot.tree.command(
@@ -1521,29 +1635,34 @@ try:
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_prune_history(interaction: discord.Interaction, days: int):
         from models.database import prune_old_conversations
-        
+
         try:
             await interaction.response.defer(ephemeral=True)
-            
+
             if days <= 0:
-                await interaction.followup.send("日数は1以上の正の整数を指定してください。", ephemeral=True)
+                await interaction.followup.send(
+                    "日数は1以上の正の整数を指定してください。", ephemeral=True
+                )
                 return
-            
+
             # 古い会話を削除
             deleted_count = prune_old_conversations(days)
-            
+
             if deleted_count >= 0:
                 await interaction.followup.send(
-                    f"{days}日より古い会話履歴を{deleted_count}件削除しました。", ephemeral=True
+                    f"{days}日より古い会話履歴を{deleted_count}件削除しました。",
+                    ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
                     "会話履歴の削除中にエラーが発生しました。", ephemeral=True
                 )
-        
+
         except Exception as e:
             logger.error(f"古い会話履歴の削除中にエラー発生: {e}")
-            await interaction.followup.send(f"エラーが発生しました: {e}", ephemeral=True)
+            await interaction.followup.send(
+                f"エラーが発生しました: {e}", ephemeral=True
+            )
 
     async def trigger_ai_conversation(vc, member):
         """
@@ -1566,9 +1685,11 @@ try:
 
                 try:
                     audio_sink = DiscordAudioSink()
-                    if hasattr(vc, 'listen'):
+                    if hasattr(vc, "listen"):
                         vc.listen(audio_sink)  # type: ignore
-                        setattr(vc, 'sink', audio_sink)  # Use setattr instead of direct assignment
+                        setattr(
+                            vc, "sink", audio_sink
+                        )  # Use setattr instead of direct assignment
                     logger.info(f"会話開始時に音声シンクを設定しました")
                 except Exception as e:
                     logger.error(f"音声シンク設定エラー: {e}")
@@ -1598,7 +1719,7 @@ try:
                     await avatar.send_avatar_to_channel(
                         text_channel,
                         state=AVATAR_STATE_IDLE,
-                        text="音声を聞いています..."
+                        text="音声を聞いています...",
                     )
                     break
         except Exception as e:
@@ -1711,7 +1832,7 @@ try:
                 await avatar.send_avatar_to_channel(
                     text_channel,
                     state=AVATAR_STATE_THINKING,
-                    text=f"「{text[:20]}...」について考えています..."
+                    text=f"「{text[:20]}...」について考えています...",
                 )
 
             start_time = time.time()
@@ -1761,7 +1882,7 @@ try:
                     await avatar.send_avatar_to_channel(
                         text_channel,
                         state=AVATAR_STATE_TALKING,
-                        text=response[:50] + ("..." if len(response) > 50 else "")
+                        text=response[:50] + ("..." if len(response) > 50 else ""),
                     )
 
                     logger.info(

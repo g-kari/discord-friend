@@ -1,5 +1,8 @@
 README.md
 pyproject.toml
+src/__init__.py
+src/test_lint.py
+src/bot/__init__.py
 src/bot/config.py
 src/bot/debug.py
 src/bot/discord_aiavatar_complete.py
@@ -7,12 +10,18 @@ src/bot/test_mcp_servers.py
 src/bot/test_output.py
 src/bot/test_with_exception.py
 src/bot/models/database.py
+src/bot/services/__init__.py
 src/bot/services/ai_service.py
 src/bot/services/audio_service.py
 src/bot/services/discord_audio.py
+src/bot/services/avatar/__init__.py
+src/bot/services/avatar/live2d_service.py
+src/bot/tests/__init__.py
 src/bot/tests/test_ai_service.py
 src/bot/tests/test_audio_service.py
+src/bot/tests/test_config_default_prompt.py
 src/bot/tests/test_discord_aiavatar_complete.py
+src/bot/tests/test_live2d_avatar.py
 src/bot/utils/__init__.py
 src/bot/utils/env_manager.py
 src/bot/utils/logging_utils.py

@@ -29,7 +29,8 @@ AIVISPEECH_API_URL = os.getenv("AIVISSPEECH_API_URL", "http://localhost:50021")
 
 # AIのデフォルトシステムプロンプト
 DEFAULT_SYSTEM_PROMPT = os.getenv(
-    "DEFAULT_SYSTEM_PROMPT", "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
+    "DEFAULT_SYSTEM_PROMPT",
+    "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。",
 )
 
 # データベース設定
