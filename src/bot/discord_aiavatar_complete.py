@@ -9,7 +9,7 @@ import time
 import traceback
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from typing import Optional, cast
+from typing import Optional
 
 import discord
 import dotenv
@@ -29,7 +29,8 @@ from services.avatar import (
 # Import config
 from src.bot import config
 
-# Conditionally import dependencies to handle missing packages in test environments
+# Conditionally import dependencies to handle missing packages
+# in test environments
 try:
     from aiavatar import AIAvatar
 
@@ -136,10 +137,12 @@ try:
             print(f"ファイルベースのデータベースに接続しています: {DB_PATH}")
             # トランザクション高速化のため、WALモードを使用
             db_conn = sqlite3.connect(
-                DB_NAME if "pytest" in sys.modules else DB_PATH, timeout=DB_TIMEOUT
+                DB_NAME if "pytest" in sys.modules else DB_PATH,
+                timeout=DB_TIMEOUT,
             )
             db_conn.execute("PRAGMA journal_mode=WAL")
-            db_conn.execute("PRAGMA busy_timeout = 30000")  # 30秒のビジータイムアウト
+            # 30秒のビジータイムアウト
+            db_conn.execute("PRAGMA busy_timeout = 30000")
             c = db_conn.cursor()
 
             # 会話履歴テーブル
@@ -190,8 +193,14 @@ try:
 
             # 動作確認のためテストデータを挿入
             c.execute(
-                "INSERT INTO conversation_history (user_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
-                (123456, "system", "テストデータです", datetime_to_str(datetime.now())),
+                "INSERT INTO conversation_history "
+                "(user_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+                (
+                    123456,
+                    "system",
+                    "テストデータです",
+                    datetime_to_str(datetime.now()),
+                ),
             )
             db_conn.commit()
             print("テストデータを挿入しました")
@@ -293,12 +302,12 @@ try:
             c = conn.cursor()
             c.execute("SELECT prompt FROM default_system_prompt WHERE id = 1")
             row = c.fetchone()
-            result = row[0] if row else DEFAULT_SYSTEM_PROMPT
-            print(f"デフォルトのシステムプロンプトを取得しました")
+            result = row[0] if row else config.DEFAULT_SYSTEM_PROMPT
+            print("デフォルトのシステムプロンプトを取得しました")
             return result
         except sqlite3.Error as e:
             print(f"デフォルトプロンプト取得エラー: {e}")
-            return DEFAULT_SYSTEM_PROMPT
+            return config.DEFAULT_SYSTEM_PROMPT
 
     def get_user_prompt(user_id):
         try:
@@ -311,7 +320,7 @@ try:
 
             # ユーザー固有のプロンプトがない場合はデフォルトプロンプトを使用
             default_prompt = get_default_system_prompt()
-            print(f"システムプロンプトを取得しました")
+            print("システムプロンプトを取得しました")
             return default_prompt
         except sqlite3.Error as e:
             print(f"プロンプト取得エラー: {e}")
@@ -446,7 +455,8 @@ try:
 
         async def on_message(self, message: discord.Message):
             logger.debug(
-                f"on_message received: '{message.content}' from {message.author.name} in guild {message.guild.name if message.guild else 'DM'}"
+                f"on_message received: '{message.content}' from {message.author.name} "
+                f"in guild {message.guild.name if message.guild else 'DM'}"
             )
 
             if message.author.bot:
@@ -990,7 +1000,7 @@ try:
                         audio_sink = DiscordAudioSink()
                         vc.listen(audio_sink)
                         vc.sink = audio_sink
-                        logger.info(f"ボイスクライアントに音声シンクを設定しました")
+                        logger.info("ボイスクライアントに音声シンクを設定しました")
                     else:
                         # ユーザーの音声バッファをクリア
                         vc.sink.clear_user_audio(member.id)
@@ -1125,7 +1135,7 @@ try:
 
                 if result:
                     logger.info(
-                        f"デフォルトシステムプロンプトを.envファイルに保存しました"
+                        "デフォルトシステムプロンプトを.envファイルに保存しました"
                     )
                     await interaction.response.send_message(
                         f"デフォルトシステムプロンプトを設定し、設定ファイルに永続的に保存しました。\n```{prompt}```"
@@ -1257,7 +1267,7 @@ try:
                     )
 
                     if result:
-                        logger.info(f"MCPサーバー設定を.envファイルに保存しました")
+                        logger.info("MCPサーバー設定を.envファイルに保存しました")
                         await interaction.response.send_message(
                             f"チャンネル「{channel_name}」をMCPサーバーリストに追加し、設定ファイルに永続的に保存しました。"
                         )
@@ -1380,7 +1390,7 @@ try:
                 )
 
                 if result:
-                    logger.info(f"MCPサーバー設定を.envファイルに保存しました")
+                    logger.info("MCPサーバー設定を.envファイルに保存しました")
                     await interaction.response.send_message(
                         f"チャンネル「{channel_name}」をサーバー「{guild_name}」のMCPサーバーリストから削除し、設定ファイルに永続的に保存しました。"
                     )
@@ -1458,7 +1468,7 @@ try:
                     setattr(
                         voice_client, "sink", audio_sink
                     )  # Use setattr instead of direct assignment
-                logger.info(f"ボイスクライアントに音声シンクを設定しました")
+                logger.info("ボイスクライアントに音声シンクを設定しました")
 
         await interaction.response.send_message(
             "会話を開始します。話してみてください。画面共有にも対応しています。"
@@ -1690,7 +1700,7 @@ try:
                         setattr(
                             vc, "sink", audio_sink
                         )  # Use setattr instead of direct assignment
-                    logger.info(f"会話開始時に音声シンクを設定しました")
+                    logger.info("会話開始時に音声シンクを設定しました")
                 except Exception as e:
                     logger.error(f"音声シンク設定エラー: {e}")
                     return
@@ -1908,7 +1918,7 @@ try:
                     os.remove(filename)
                 if tts_file and os.path.exists(tts_file):
                     os.remove(tts_file)
-                logger.debug(f"一時ファイルを削除しました")
+                logger.debug("一時ファイルを削除しました")
             except Exception as e:
                 logger.error(f"一時ファイル削除エラー: {e}")
 
