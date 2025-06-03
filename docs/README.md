@@ -1,66 +1,66 @@
-# Discord AI Voice Bot Documentation
+# Discord AI Voice Bot ドキュメント
 
-This directory contains the source files for the GitHub Pages documentation site of the Discord AI Voice Bot project.
+このディレクトリには、Discord AI Voice Bot プロジェクトの GitHub Pages ドキュメントサイトのソースファイルが含まれています。
 
-## Structure
+## 構造
 
-- `_config.yml`: Jekyll configuration file
-- `index.md`: Home page
-- `development.md`: Development guide
-- `contributing.md`: Contributing guide
-- `security.md`: Security guidelines
-- `features/`: Directory containing feature-specific documentation
-  - `features/index.md`: Features overview
-  - `features/mcp-servers.md`: MCP servers auto-join feature documentation
+- `_config.yml`: Jekyll設定ファイル
+- `index.md`: ホームページ
+- `development.md`: 開発ガイド
+- `contributing.md`: 貢献ガイド
+- `security.md`: セキュリティガイドライン
+- `features/`: 機能固有のドキュメントを含むディレクトリ
+  - `features/index.md`: 機能概要
+  - `features/mcp-servers.md`: MCPサーバー自動接続機能のドキュメント
 
-## Local Development
+## ローカル開発
 
-To test the documentation site locally:
+ドキュメントサイトをローカルでテストするには：
 
-1. Install Jekyll and dependencies:
+1. JekyllとDependenciesをインストール：
    ```bash
    gem install bundler jekyll
    ```
 
-2. Create a Gemfile with:
+2. 以下の内容でGemfileを作成：
    ```ruby
    source "https://rubygems.org"
    gem "github-pages", group: :jekyll_plugins
    gem "jekyll-remote-theme"
    ```
 
-3. Install dependencies:
+3. 依存関係をインストール：
    ```bash
    bundle install
    ```
 
-4. Run the local server:
+4. ローカルサーバーを起動：
    ```bash
    bundle exec jekyll serve
    ```
 
-5. Open your browser at http://localhost:4000
+5. ブラウザで http://localhost:4000 を開く
 
-## Adding New Documentation
+## 新しいドキュメントの追加
 
-To add new documentation:
+新しいドキュメントを追加するには：
 
-1. Create a new Markdown file with the appropriate frontmatter:
+1. 適切なフロントマターを含む新しいMarkdownファイルを作成：
    ```yaml
    ---
    layout: default
-   title: Your Page Title
-   nav_order: X  # Control the order in the navigation
-   description: "Brief description"
+   title: ページタイトル
+   nav_order: X  # ナビゲーションでの順序を制御
+   description: "簡単な説明"
    permalink: /your-page-url/
    ---
    ```
 
-2. For feature-specific documentation, add to the `features/` directory and include:
+2. 機能固有のドキュメントの場合は、`features/` ディレクトリに追加し、以下を含める：
    ```yaml
    ---
-   parent: 機能ガイド  # This links it under the Features section
+   parent: 機能ガイド  # これにより機能セクションの下にリンクされます
    ---
    ```
 
-3. Update links in other pages as needed
+3. 必要に応じて他のページのリンクを更新

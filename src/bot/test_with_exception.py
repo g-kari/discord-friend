@@ -11,10 +11,10 @@ try:
     # 意図的にエラーを発生させる
     1 / 0
 except Exception as e:
-    error_msg = f"エラーが発生しました: {e}\n{traceback.format_exc()}"
+    error_msg = f"エラーが発生しました: {e}"
     logger.error(error_msg)
-    # ファイルにもエラーを書き出す
-    with open("error_log.txt", "w") as f:
-        f.write(error_msg)
+    # セキュリティ上の理由で、機密情報を含む可能性のある詳細なスタックトレースは
+    # ログファイルには書き込まずに、標準エラー出力のみに出力
+    print(traceback.format_exc(), file=sys.stderr)
 
     sys.exit(1)
