@@ -18,7 +18,7 @@ import soundfile as sf
 from discord import FFmpegPCMAudio, VoiceClient, app_commands
 from discord.ext import commands
 
-# Import our Live2D avatar service
+# Live2D アバターサービスをインポート
 from services.avatar import (
     AVATAR_STATE_IDLE,
     AVATAR_STATE_TALKING,
@@ -26,11 +26,11 @@ from services.avatar import (
     get_avatar,
 )
 
-# Import config
+# config をインポート
 from src.bot import config
 
-# Conditionally import dependencies to handle missing packages
-# in test environments
+# テスト環境で欠落しているパッケージを処理するため、
+# 依存関係を条件付きでインポート
 try:
     from aiavatar import AIAvatar
 
@@ -97,7 +97,7 @@ try:
     # データベースの設定
     cur_dir = pathlib.Path.cwd()
     DB_PATH = str(cur_dir / "aiavatar_bot.db")
-    DB_NAME = DB_PATH  # Add this for testing compatibility
+    DB_NAME = DB_PATH  # テスト互換性のためにこれを追加
 
     # ロック問題を避けるために必要な設定
     DB_TIMEOUT = 60.0  # 接続タイムアウト値（秒）
@@ -110,7 +110,7 @@ try:
         logger.error(
             "Discord Botトークンが設定されていません。.envファイルを確認してください。"
         )
-        # In test environment, don't exit
+        # テスト環境では終了しない
         if "pytest" not in sys.modules:
             raise ValueError(
                 "Discord Botトークンが設定されていません。.envファイルを確認してください。"
@@ -208,7 +208,7 @@ try:
         except sqlite3.Error as e:
             print(f"データベース初期化中にエラーが発生しました: {e}")
             print("エラーが発生したため、処理を終了します")
-            # In test environment, don't exit
+            # テスト環境では終了しない
             if "pytest" not in sys.modules:
                 sys.exit(1)  # エラーでプログラム終了
 
@@ -230,7 +230,7 @@ try:
             except sqlite3.Error as e:
                 print(f"データベース接続エラー: {e}")
                 print("エラーが発生したため、処理を終了します")
-                # In test environment, don't exit
+                # テスト環境では終了しない
                 if "pytest" not in sys.modules:
                     sys.exit(1)  # エラーでプログラム終了
 
@@ -259,7 +259,7 @@ try:
                 (user_id, limit),
             )
             rows = c.fetchall()
-            # Reversed order for test compatibility
+            # テスト互換性のため順序を逆転
             history = [{"role": role, "content": content} for role, content in rows]
             print(f"ユーザー履歴を取得しました - {len(history)}件")
             return history
@@ -463,8 +463,8 @@ try:
                 logger.debug("Message from bot, ignoring.")
                 return
 
-            # This check is for traditional prefix commands.
-            # The bot uses "!" as a prefix.
+            # このチェックは従来のプレフィックスコマンド用です。
+            # ボットは "!" をプレフィックスとして使用します。
             if (
                 isinstance(message.content, str)
                 and isinstance(self.command_prefix, str)
@@ -473,9 +473,9 @@ try:
                 logger.debug(
                     f"Message starts with command prefix '{self.command_prefix}', ignoring for on_message handler."
                 )
-                # Let the command system handle this.
-                # If you also want to process commands here for some reason, remove this check.
-                # However, usually, commands are handled by their own decorators.
+                # コマンドシステムにこれを処理させます。
+                # 何らかの理由でここでもコマンドを処理したい場合は、このチェックを削除してください。
+                # ただし、通常、コマンドは独自のデコレータによって処理されます。
 
                 # Special case for set_default_prompt text command (needs to be here to handle admin permissions)
                 if message.content.startswith(
@@ -813,7 +813,7 @@ try:
             print(
                 f"AIAvatarがインポートできないため、初期化をスキップします: {aiavatar_import_error}"
             )
-            # In test environment, don't exit
+            # テスト環境では終了しない
             if "pytest" not in sys.modules:
                 logger.error(f"AIAvatarのインポートエラー: {aiavatar_import_error}")
     except Exception as e:
@@ -1929,7 +1929,7 @@ try:
             logger.error(
                 "'.env'ファイルを確認して、DISCORD_BOT_TOKENを設定してください"
             )
-            # In test environment, don't exit
+            # テスト環境では終了しない
             if "pytest" not in sys.modules:
                 sys.exit(1)
 
@@ -1963,6 +1963,6 @@ except Exception as e:
     # セキュリティ上の理由で、機密情報を含む可能性のある詳細なスタックトレースは
     # ログファイルには書き込まずに、標準エラー出力のみに出力
     print(traceback.format_exc(), file=sys.stderr)
-    # In test environment, don't exit
+    # テスト環境では終了しない
     if "pytest" not in sys.modules:
         sys.exit(1)
