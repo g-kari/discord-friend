@@ -1,89 +1,89 @@
-# Contributing to Discord AI Avatar Bot
+# Discord AI Avatar Bot への貢献
 
-Thank you for your interest in contributing to this project! This document provides guidelines and instructions for contributing.
+このプロジェクトへの貢献に興味をお持ちいただき、ありがとうございます！このドキュメントでは、貢献のためのガイドラインと手順を提供します。
 
-## Development Environment Setup
+## 開発環境のセットアップ
 
-### Option 1: Using Dev Containers (Recommended)
+### オプション 1: Dev Containers を使用する方法（推奨）
 
-This project is set up to use Dev Containers, which provides a consistent development environment:
+このプロジェクトは Dev Containers を使用するように設定されており、一貫した開発環境を提供します：
 
-1. Install [Visual Studio Code](https://code.visualstudio.com/)
-2. Install the [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension
-3. Clone the repository and open it in VS Code
-4. When prompted, select "Reopen in Container" or use the command palette (F1) and select "Remote-Containers: Reopen in Container"
+1. [Visual Studio Code](https://code.visualstudio.com/) をインストール
+2. [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) 拡張機能をインストール
+3. リポジトリをクローンし、VS Code で開く
+4. プロンプトが表示されたら「Reopen in Container」を選択するか、コマンドパレット（F1）から「Remote-Containers: Reopen in Container」を選択
 
-### Option 2: Local Development with UV
+### オプション 2: UV を使用したローカル開発
 
-If you prefer to develop locally:
+ローカルで開発したい場合：
 
-1. Install Python 3.9 or higher
-2. Install `uv`:
+1. Python 3.9 以上をインストール
+2. `uv` をインストール：
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
-3. Create and activate a virtual environment:
+3. 仮想環境を作成してアクティベート：
    ```bash
    cd src/bot
    uv venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   source .venv/bin/activate  # Windows の場合: .venv\Scripts\activate
    ```
-4. Install dependencies:
+4. 依存関係をインストール：
    ```bash
    uv pip install -r requirements.txt
    ```
-5. Set up environment variables:
+5. 環境変数を設定：
    ```bash
    cp aiavatar_env.example .env
-   # Edit .env with your configuration
+   # .env ファイルを設定で編集
    ```
 
-## Development Workflow
+## 開発ワークフロー
 
-1. Create a feature branch from `main`
-2. Make your changes
-3. Run linting and tests:
+1. `main` から機能ブランチを作成
+2. 変更を加える
+3. リンティングとテストを実行：
    ```bash
-   # Automatic linting with fixes and commit
+   # 自動リンティングと修正、コミット
    ./scripts/lint_and_fix.sh --dir=src/
    
-   # Or run linters individually
+   # または個別にリンターを実行
    black src/
    isort src/
    flake8 src/
    mypy src/
    
-   # Tests
+   # テスト
    pytest src/bot/test_*.py
    ```
-4. Submit a pull request
+4. プルリクエストを提出
 
-## Code Style
+## コードスタイル
 
-This project follows these coding standards:
+このプロジェクトは以下のコーディング標準に従っています：
 
-- [Black](https://black.readthedocs.io/) for code formatting (line length: 88)
-- [isort](https://pycqa.github.io/isort/) for import sorting (profile: black)
-- [flake8](https://flake8.pycqa.org/) for linting
-- [mypy](https://mypy.readthedocs.io/) for type checking
+- [Black](https://black.readthedocs.io/) - コードフォーマット（行の長さ：88）
+- [isort](https://pycqa.github.io/isort/) - インポートのソート（プロファイル：black）
+- [flake8](https://flake8.pycqa.org/) - リンティング
+- [mypy](https://mypy.readthedocs.io/) - 型チェック
 
-## Project Structure
+## プロジェクト構造
 
-- `src/bot/` - Main bot code
-  - `discord_aiavatar_complete.py` - Main bot entry point
-  - `config.py` - Configuration and environment variables
-  - `models/` - Data models and database interactions
-  - `services/` - External service integrations
+- `src/bot/` - メインボットコード
+  - `discord_aiavatar_complete.py` - メインボットエントリーポイント
+  - `config.py` - 設定と環境変数
+  - `models/` - データモデルとデータベースの相互作用
+  - `services/` - 外部サービス統合
 
-## Testing
+## テスト
 
-Write tests for new features or bug fixes. Run tests with:
+新機能やバグ修正のテストを記述してください。テストは以下で実行できます：
 
 ```bash
 pytest src/bot/test_*.py
 ```
 
-## Documentation
+## ドキュメント
 
-- Document new functions, classes, and modules with docstrings
-- Update README.md if needed with new features or changes in setup instructions
+- 新しい関数、クラス、モジュールにはdocstringを記述
+- 新機能やセットアップ手順の変更がある場合は README.md を更新

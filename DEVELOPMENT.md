@@ -1,78 +1,78 @@
-# Discord AI Avatar Bot - Development Guide
+# Discord AI Avatar Bot - 開発ガイド
 
-This document provides technical information for developers. For general information and usage, see the main README.md.
+このドキュメントは開発者向けの技術情報を提供します。一般的な情報と使用方法については、メインの README.md を参照してください。
 
-## Project Structure
+## プロジェクト構造
 
 ```
 src/bot/
-├── discord_aiavatar_complete.py  # Main bot file
-├── config.py                     # Configuration and environment variables
-├── models/                       # Data models
-│   └── database.py               # Database interactions
-├── services/                     # Service integrations
-└── requirements.txt              # Python dependencies
+├── discord_aiavatar_complete.py  # メインボットファイル
+├── config.py                     # 設定と環境変数
+├── models/                       # データモデル
+│   └── database.py               # データベース操作
+├── services/                     # サービス統合
+└── requirements.txt              # Python依存関係
 ```
 
-## Key Components
+## 主要コンポーネント
 
 ### Discord Bot
 
-The main Discord bot is implemented in `discord_aiavatar_complete.py`. It uses discord.py to interface with the Discord API.
+メインの Discord ボットは `discord_aiavatar_complete.py` に実装されています。Discord API とのインターフェースに discord.py を使用しています。
 
-Key functions:
-- Voice recognition and processing
-- Integration with AI services
-- User preference management
-- Voice channel interactions
+主な機能：
+- 音声認識と処理
+- AI サービスとの統合
+- ユーザー設定管理
+- ボイスチャンネルでの相互作用
 
-### Configuration
+### 設定
 
-Configuration is managed via `config.py` and environment variables loaded from a `.env` file.
+設定は `config.py` と `.env` ファイルから読み込まれる環境変数を通じて管理されます。
 
-Required environment variables:
-- `DISCORD_BOT_TOKEN`: Your Discord bot token
-- `DIFY_API_KEY`: API key for Dify AI
-- `DIFY_API_URL`: URL for Dify API
-- `OPENAI_API_KEY`: OpenAI API key for speech recognition
-- `AIVISSPEECH_API_URL`: URL for AivisSpeech API (defaults to http://localhost:50021)
+必要な環境変数：
+- `DISCORD_BOT_TOKEN`: Discord ボットトークン
+- `DIFY_API_KEY`: Dify AI の API キー
+- `DIFY_API_URL`: Dify API の URL
+- `OPENAI_API_KEY`: 音声認識用の OpenAI API キー
+- `AIVISSPEECH_API_URL`: AivisSpeech API の URL（デフォルト: http://localhost:50021）
 
-Optional environment variables:
-- `MCP_SERVERS`: JSON-formatted configuration for servers and voice channels to auto-join on startup.
-  Example: `{"Server Name": ["Voice Channel 1", "Voice Channel 2"]}`
+オプションの環境変数：
+- `MCP_SERVERS`: 起動時に自動接続するサーバーとボイスチャンネルの JSON 形式の設定。
+  例: `{"サーバー名": ["ボイスチャンネル1", "ボイスチャンネル2"]}`
 
-### Database
+### データベース
 
-The bot uses SQLite for data storage. The database file is `aiavatar_bot.db` by default.
+ボットはデータ保存に SQLite を使用します。データベースファイルはデフォルトで `aiavatar_bot.db` です。
 
-Main tables:
-- `recording_settings`: User preferences for voice recording
-- `user_settings`: General user settings and preferences
+主なテーブル：
+- `recording_settings`: ユーザーの音声録音設定
+- `user_settings`: 一般的なユーザー設定と設定
 
-## Development Workflow
+## 開発ワークフロー
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development setup and workflow information.
+詳細な開発環境のセットアップとワークフローについては、[CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
 
-## Architecture
+## アーキテクチャ
 
-The bot follows these main execution flows:
+ボットは以下の主要な実行フローに従います：
 
-1. **Voice Recognition**:
-   - User speaks in a voice channel
-   - Audio is captured and processed
-   - Speech is converted to text using OpenAI
-   - Text is sent to AI service for processing
+1. **音声認識**：
+   - ユーザーがボイスチャンネルで話す
+   - 音声がキャプチャされ処理される
+   - OpenAI を使用して音声がテキストに変換される
+   - テキストが処理のために AI サービスに送信される
 
-2. **AI Response**:
-   - Response from AI service is processed
-   - Text is converted to speech using AivisSpeech
-   - Audio is played back in the voice channel
+2. **AI 応答**：
+   - AI サービスからの応答が処理される
+   - AivisSpeech を使用してテキストが音声に変換される
+   - 音声がボイスチャンネルで再生される
 
-3. **Command Handling**:
-   - Users can control the bot with Discord slash commands
-   - Commands manage settings, trigger actions, or query information
+3. **コマンド処理**：
+   - ユーザーは Discord スラッシュコマンドでボットを制御できる
+   - コマンドは設定を管理し、アクションをトリガーし、情報を問い合わせる
 
-4. **Auto-Join Feature**:
-   - Bot can automatically join specified voice channels on startup
-   - Configured via the `MCP_SERVERS` environment variable
-   - Useful for production deployments where the bot should be active in specific channels
+4. **自動接続機能**：
+   - ボットは起動時に指定されたボイスチャンネルに自動的に接続できる
+   - `MCP_SERVERS` 環境変数を通じて設定される
+   - ボットが特定のチャンネルでアクティブである必要がある本番環境に役立つ
