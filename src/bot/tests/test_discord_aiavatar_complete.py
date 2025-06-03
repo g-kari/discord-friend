@@ -277,8 +277,6 @@ if __name__ == "__main__":
                             unittest.main()
 
 
-from unittest.mock import AsyncMock  # Add AsyncMock
-
 # Keep other imports like sqlite3, os, patch, MagicMock as they are.
 
 
