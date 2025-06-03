@@ -9,7 +9,7 @@ import tempfile
 
 sys.path.append("/home/runner/work/discord-friend/discord-friend/src/bot")
 
-from src.bot.utils.logging_utils import setup_logger
+from src.bot.utils.logging_utils import setup_logger  # noqa: E402
 
 # ロガー設定
 logger = setup_logger("test_env_manager")
