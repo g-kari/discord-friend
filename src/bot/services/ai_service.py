@@ -12,7 +12,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import config after setting path
-from src.bot import config
+from src.bot import config  # noqa: E402
 
 # キャッシュ用：最後に認識したテキスト
 last_transcribed = {}

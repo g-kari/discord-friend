@@ -193,6 +193,6 @@ def save_discord_audio(audio_data, filename=None, samplerate=48000):
         if filename and os.path.exists(filename):
             try:
                 os.remove(filename)
-            except:
+            except Exception:
                 pass
         return None

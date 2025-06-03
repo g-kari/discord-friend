@@ -242,7 +242,10 @@ try:
             conn = get_db_connection()
             c = conn.cursor()
             c.execute(
-                "INSERT INTO conversation_history (user_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+                (
+                    "INSERT INTO conversation_history "
+                    "(user_id, role, content, timestamp) VALUES (?, ?, ?, ?)"
+                ),
                 (user_id, role, content, datetime_to_str(datetime.now())),
             )
             conn.commit()
@@ -255,7 +258,10 @@ try:
             conn = get_db_connection()
             c = conn.cursor()
             c.execute(
-                "SELECT role, content FROM conversation_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
+                (
+                    "SELECT role, content FROM conversation_history "
+                    "WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?"
+                ),
                 (user_id, limit),
             )
             rows = c.fetchall()
@@ -1578,7 +1584,7 @@ try:
             try:
                 discord_user = await bot.fetch_user(user_id_int)
                 user_name = f"{discord_user.name}#{discord_user.discriminator}"
-            except:
+            except Exception:
                 user_name = f"Unknown ({user_id_int})"
 
             # ユーザー設定をリセット
@@ -1792,7 +1798,7 @@ try:
                 logger.error("音声データの保存に失敗したため会話処理を中止します")
                 try:
                     os.remove(filename)
-                except:
+                except Exception:
                     pass
                 return
 

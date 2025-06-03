@@ -1,8 +1,5 @@
-import os
-import sys
-import tempfile
 import unittest
-from unittest.mock import MagicMock, call, mock_open, patch
+from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 

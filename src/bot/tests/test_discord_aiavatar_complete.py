@@ -1,4 +1,3 @@
-import os
 import sqlite3
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch

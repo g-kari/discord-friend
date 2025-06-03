@@ -14,7 +14,7 @@ import soundfile as sf
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import config after setting path
-from src.bot import config
+from src.bot import config  # noqa: E402
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ def record_with_silence_detection(
         if temp_file and os.path.exists(filename):
             try:
                 os.remove(filename)
-            except:
+            except Exception:
                 pass
         return None
 

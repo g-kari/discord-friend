@@ -8,7 +8,6 @@ import sys
 import tempfile
 
 sys.path.append("/home/runner/work/discord-friend/discord-friend/src/bot")
-from utils import env_manager
 
 from src.bot.utils.logging_utils import setup_logger
 
@@ -65,7 +64,7 @@ def test_env_manager():
 
         # Test updating an existing variable
         result = simple_update_env_variable("TEST_KEY", "updated_value", test_env_file)
-        assert result == True
+        assert result is True
 
         # Verify the update
         lines = simple_read_env_file(test_env_file)
@@ -74,7 +73,7 @@ def test_env_manager():
 
         # Test adding a new variable
         result = simple_update_env_variable("NEW_KEY", "new_value", test_env_file)
-        assert result == True
+        assert result is True
 
         # Verify the addition
         lines = simple_read_env_file(test_env_file)
@@ -85,7 +84,7 @@ def test_env_manager():
         test_dict = {"key1": "value1", "key2": ["item1", "item2"]}
         json_value = json.dumps(test_dict)
         result = simple_update_env_variable("JSON_KEY", json_value, test_env_file)
-        assert result == True
+        assert result is True
 
         # Verify the JSON encoding
         lines = simple_read_env_file(test_env_file)
@@ -99,7 +98,7 @@ def test_env_manager():
 
         # Test removing a variable
         result = simple_remove_env_variable("ANOTHER_KEY", test_env_file)
-        assert result == True
+        assert result is True
 
         # Verify the removal
         lines = simple_read_env_file(test_env_file)
