@@ -22,7 +22,7 @@ import sys
 from datetime import datetime
 
 
-# Regex patterns for common secrets
+# 一般的なシークレットの正規表現パターン
 SECRET_PATTERNS = {
     'Discord Token': r'(?:discord|bot)[^a-zA-Z0-9](?:token|key)[^a-zA-Z0-9]+([a-zA-Z0-9_-]{24}\.[a-zA-Z0-9_-]{6}\.[a-zA-Z0-9_-]{27}|[a-zA-Z0-9_-]{59})',
     'OpenAI API Key': r'(?:openai|sk-)[^a-zA-Z0-9](?:token|key|secret)[^a-zA-Z0-9]+([sS][kK]-[a-zA-Z0-9]{48})',
@@ -32,7 +32,7 @@ SECRET_PATTERNS = {
     'URL with credentials': r'(https?://[^:\s]+:[^@\s]+@[^\s]+)',
 }
 
-# Ignore patterns for common false positives
+# 一般的な誤検知の無視パターン
 IGNORE_PATTERNS = [
     r'example',
     r'placeholder',
@@ -107,15 +107,15 @@ class GitSecretScanner:
         Returns:
             List of findings (dictionaries with commit info and detected secrets)
         """
-        # Prepare the git log command
+        # git log コマンドを準備
         git_log_cmd = ['log', '-p', '--all']
         if self.since:
             git_log_cmd.extend(['--since', self.since])
 
-        # Run the git log command
+        # git log コマンドを実行
         git_log_output = self._run_git_command(git_log_cmd)
         
-        # Process the output
+        # 出力を処理
         current_commit = None
         lines = git_log_output.split('\n')
         
