@@ -13,13 +13,13 @@ import soundfile as sf
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import config after setting path
+# パスを設定後に config をインポート
 from src.bot import config
 
-# Set up logging
+# ロギングを設定
 logger = logging.getLogger(__name__)
 
-# Conditionally import sounddevice to handle missing package in test environments
+# テスト環境で欠落しているパッケージを処理するため、sounddevice を条件付きでインポート
 try:
     import sounddevice as sd
 

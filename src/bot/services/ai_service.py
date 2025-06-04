@@ -11,19 +11,19 @@ import sys
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import config after setting path
+# パスを設定後に config をインポート
 from src.bot import config
 
 # キャッシュ用：最後に認識したテキスト
 last_transcribed = {}
 
-# Set up logging
+# ロギングを設定
 logger = logging.getLogger(__name__)
 
-# Create a mock AIAvatar instance or import the real one for testing
+# テスト用にモック AIAvatar インスタンスを作成するか、実際のものをインポート
 aiavatar = None
 if "pytest" in sys.modules:
-    # In test environment, don't import AIAvatar
+    # テスト環境では AIAvatar をインポートしない
     logger.warning("Running in test environment, using mock AIAvatar")
 else:
     try:
