@@ -239,7 +239,8 @@ class TestAudioService(unittest.TestCase):
         self.assertIsInstance(args[1], np.ndarray)
         self.assertEqual(args[2], samplerate)
 
-        # Verify data length: should be around (initial_sound_duration + silence_duration_config) * samplerate
+        # Verify data length: should be
+        # around (initial_sound_duration + silence_duration_config) * samplerate
         # Initial sound was 1 second (num_initial_sound_blocks * block_duration)
         # Silence detection kicks in after silence_duration_config of silence.
         # The recording includes the initial sound and the silence period that triggered the stop.
@@ -248,7 +249,8 @@ class TestAudioService(unittest.TestCase):
         # ) * blocksize  # -1 because the loop breaks after condition is met - unused
 
         # The actual number of frames can be tricky due to how silence is measured and loop breaks.
-        # It should contain the initial non-silent part, and then the part of silence that triggered the condition.
+        # It should contain the initial non-silent part, and
+        # then the part of silence that triggered the condition.
         # Roughly: 1s (sound) + 2s (silence leading to stop) = 3s of audio data
         # So, 3 * samplerate frames
         # num_initial_sound_blocks = 10 (1 second)

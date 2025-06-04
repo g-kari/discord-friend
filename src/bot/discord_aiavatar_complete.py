@@ -475,13 +475,15 @@ try:
                 and message.content.startswith(self.command_prefix)
             ):
                 logger.debug(
-                    f"Message starts with command prefix '{self.command_prefix}', ignoring for on_message handler."
+                    f"Message starts with command prefix '{self.command_prefix}', "
+                    "ignoring for on_message handler."
                 )
                 # コマンドシステムにこれを処理させます。
                 # 何らかの理由でここでもコマンドを処理したい場合は、このチェックを削除してください。
                 # ただし、通常、コマンドは独自のデコレータによって処理されます。
 
-                # Special case for set_default_prompt text command (needs to be here to handle admin permissions)
+                # Special case for set_default_prompt text command
+                # (needs to be here to handle admin permissions)
                 if message.content.startswith(f"{self.command_prefix}set_default_prompt "):
                     # Check if the user is an admin
                     if (
@@ -548,7 +550,8 @@ try:
                     logger.debug(f"Saved user message for {username}.")
 
                     # 3. Call LLM
-                    # The history fetched *before* saving the current user message is correct for the LLM call.
+                    # The history fetched *before* saving the current user message
+                    # is correct for the LLM call.
                     # The current user message is passed as `text` argument.
                     start_time = time.time()
                     if aiavatar is None:
@@ -590,7 +593,8 @@ try:
                             ):
                                 channel_name = message.channel.name
                             logger.info(
-                                f"Sending AI response to channel {channel_name} for user {username}: "
+                                f"Sending AI response to channel {channel_name} "
+                                f" for user {username}: "
                                 f'"{ai_response[:50]}..."'
                             )
                             await message.channel.send(ai_response)
@@ -604,7 +608,8 @@ try:
                             ):
                                 channel_name = message.channel.name
                             logger.debug(
-                                f"Successfully sent AI response to channel {channel_name} for {username}."
+                                f"Successfully sent AI response to channel {channel_name} "
+                                f" for {username}."
                             )
                         except discord.DiscordException as e:
                             channel_name = "unknown"
@@ -618,7 +623,8 @@ try:
                             ):
                                 channel_name = message.channel.name
                             logger.error(
-                                f"Failed to send AI response to channel {channel_name} for {username}: {e}"
+                                f"Failed to send AI response to channel {channel_name} "
+                                f" for {username}: {e}"
                             )
                             logger.debug(traceback.format_exc())
                         except Exception as e:  # Catch any other unexpected errors during send
@@ -633,7 +639,8 @@ try:
                             ):
                                 channel_name = message.channel.name
                             logger.error(
-                                f"Unexpected error sending AI response to channel {channel_name} for {username}: {e}"
+                                f"Unexpected error sending AI response to channel {channel_name} "
+                                f" for {username}: {e}"
                             )
                             logger.debug(traceback.format_exc())
 
@@ -725,11 +732,13 @@ try:
                                     try:
                                         os.remove(tts_audio_path)
                                         logger.debug(
-                                            f"Successfully deleted temporary TTS file: {tts_audio_path}"
+                                            f"Successfully deleted temporary TTS file: "
+                                            f"{tts_audio_path}"
                                         )
                                     except Exception as e_cleanup:
                                         logger.error(
-                                            f"Error deleting temporary TTS file {tts_audio_path}: {e_cleanup}"
+                                            f"Error deleting temporary TTS file {tts_audio_path}: "
+                                            f"{e_cleanup}"
                                         )
                         else:
                             if not (
@@ -738,7 +747,8 @@ try:
                                 and voice_client_in_guild.is_connected()
                             ):
                                 logger.debug(
-                                    f"Voice client not connected or available, skipping TTS for {username}."
+                                    f"Voice client not connected or available, skipping TTS "
+                                    f" for {username}."
                                 )
                             if not ai_response:
                                 logger.debug(
@@ -761,16 +771,19 @@ try:
                 # Example: await speak_text(voice_client_in_guild, ai_response)
                 if ai_response:
                     logger.debug(
-                        f"AI response for {username} ready for further actions: '{ai_response[:100]}...'"
+                        f"AI response for {username} ready for further actions: "
+                        f"'{ai_response[:100]}...'"
                     )
                 else:
                     logger.warning(
-                        f"No AI response generated or error occurred for {username}. No further text/speech actions."
+                        f"No AI response generated or error occurred "
+                        f" for {username}. No further text/speech actions."
                     )
 
             else:
                 logger.debug(
-                    f"Bot not in a voice channel in guild '{message.guild.name}' or message not applicable. Ignoring."
+                    f"Bot not in a voice channel in guild '{message.guild.name}' "
+                    "or message not applicable. Ignoring."
                 )
 
     # Botインスタンスの作成
@@ -856,7 +869,8 @@ try:
                     # 音量レベルをログに記録（デバッグ用）
                     if i % 10 == 0:  # 1秒ごとにログ
                         logger.debug(
-                            f"録音中: フレーム {i}, 音量 {volume:.6f}, 無音カウント {silence_count}, しきい値 {silence_threshold}"
+                            f"録音中: フレーム {i}, 音量 {volume:.6f}, "
+                            f"無音カウント {silence_count}, しきい値 {silence_threshold}"
                         )
 
                     # 音声検出されたかどうか
@@ -1229,7 +1243,8 @@ try:
                             "MCPサーバー設定を保存する.envファイルが見つからないか、更新できませんでした"
                         )
                         await interaction.response.send_message(
-                            f"チャンネル「{channel_name}」をMCPサーバーリストに追加しましたが、設定ファイルが見つからないため永続的に保存できませんでした。"
+                            f"チャンネル「{channel_name}」をMCPサーバーリストに追加しましたが、"
+                            "設定ファイルが見つからないため永続的に保存できませんでした。"
                         )
                 else:
                     await interaction.response.send_message(
@@ -1343,18 +1358,21 @@ try:
                 if result:
                     logger.info("MCPサーバー設定を.envファイルに保存しました")
                     await interaction.response.send_message(
-                        f"チャンネル「{channel_name}」をサーバー「{guild_name}」のMCPサーバーリストから削除し、設定ファイルに永続的に保存しました。"
+                        f"チャンネル「{channel_name}」をサーバー「{guild_name}」の"
+                        "MCPサーバーリストから削除し、設定ファイルに永続的に保存しました。"
                     )
                 else:
                     logger.warning(
                         "MCPサーバー設定を保存する.envファイルが見つからないか、更新できませんでした"
                     )
                     await interaction.response.send_message(
-                        f"チャンネル「{channel_name}」をサーバー「{guild_name}」のMCPサーバーリストから削除しましたが、設定ファイルが見つからないため永続的に保存できませんでした。"
+                        f"チャンネル「{channel_name}」をサーバー「{guild_name}」の"
+                        "MCPサーバーリストから削除しましたが、設定ファイルが見つからないため永続的に保存できませんでした。"
                     )
             else:
                 await interaction.response.send_message(
-                    f"チャンネル「{channel_name}」をサーバー「{guild_name}」のMCPサーバーリストから一時的に削除しました。ボット再起動後にリセットされます。"
+                    f"チャンネル「{channel_name}」をサーバー「{guild_name}」の"
+                    "MCPサーバーリストから一時的に削除しました。ボット再起動後にリセットされます。"
                 )
         except Exception as e:
             logger.error(f"MCPサーバー削除中にエラーが発生しました: {e}")
@@ -1483,7 +1501,10 @@ try:
                     response += (
                         f"- 録音設定: {'有効' if settings['recording_enabled'] else '無効'}\n"
                     )
-                    response += f"- キーワードトリガー: {settings['keyword'] if settings['keyword'] else 'なし'}\n"
+                    response += (
+                        f"- キーワードトリガー: "
+                        f"{settings['keyword'] if settings['keyword'] else 'なし'}\n"
+                    )
                     response += f"- メッセージ数: {settings['message_count']}\n"
                 response += "\n"
 
@@ -1877,7 +1898,8 @@ try:
         logger.info(f"DIFY_API_KEY: {'設定済み' if DIFY_API_KEY else '未設定'}")
         logger.info(f"OPENAI_API_KEY: {'設定済み' if os.getenv('OPENAI_API_KEY') else '未設定'}")
         logger.info(
-            f"AIVISSPEECH_API_URL: {os.getenv('AIVISSPEECH_API_URL', 'デフォルト(http://localhost:50021)')}"
+            f"AIVISSPEECH_API_URL: "
+            f"{os.getenv('AIVISSPEECH_API_URL', 'デフォルト(http://localhost:50021)')}"
         )
 
         logger.info("\nDiscord Botを起動します...")

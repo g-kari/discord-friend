@@ -127,7 +127,8 @@ class TestDatabaseFunctions(unittest.TestCase):
 
             timestamp = datetime.now().isoformat()
             cursor.execute(
-                "INSERT INTO conversation_history (user_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+                "INSERT INTO conversation_history (user_id, role, content, timestamp) "
+                "VALUES (?, ?, ?, ?)",
                 (user_id, role, content, timestamp),
             )
             conn.commit()
@@ -198,7 +199,8 @@ class TestDatabaseFunctions(unittest.TestCase):
 
             timestamp = datetime.now().isoformat()
             cursor.execute(
-                "INSERT OR REPLACE INTO system_prompts (user_id, prompt, created_at) VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO system_prompts (user_id, prompt, created_at) "
+                "VALUES (?, ?, ?)",
                 (str(user_id), prompt, timestamp),
             )
             conn.commit()
@@ -252,7 +254,8 @@ if __name__ == "__main__":
     # For robust testing, it's better to run tests via unittest discovery
     # which allows patches at the class/method level to work correctly before module-level code in
     # discord_aiavatar_complete runs.
-    # However, to make `python -m unittest src/bot/tests/test_discord_aiavatar_complete.py` work as expected,
+    # However, to make `python -m
+    # unittest src/bot/tests/test_discord_aiavatar_complete.py` work as expected,
     # we can try patching here, but it's not the ideal way.
 
     # The @patch decorators on setUp and test methods are the more reliable way.
@@ -583,7 +586,8 @@ class TestOnMessageFunctionality(unittest.TestCase):
 if __name__ == "__main__":
     with patch("src.bot.discord_aiavatar_complete.DB_NAME", ":memory:"):
         with patch("dotenv.load_dotenv", return_value=True):
-            # Deeper patches for discord client/tree may not be needed if bot instance is AIAvatarBot directly
+            # Deeper patches for discord client/tree may not
+            # be needed if bot instance is AIAvatarBot directly
             # and not relying on discord.Client global/class patches for its own init.
             # The key is that AIAvatarBot itself and its methods are what we test.
             with patch("logging.getLogger", return_value=MagicMock()):  # General logging
