@@ -11,8 +11,8 @@ import sys
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# パスを設定後に config をインポート
-from src.bot import config
+# Import config after setting path
+from src.bot import config  # noqa: E402
 
 # キャッシュ用：最後に認識したテキスト
 last_transcribed = {}

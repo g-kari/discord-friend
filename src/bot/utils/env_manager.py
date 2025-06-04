@@ -7,7 +7,7 @@ with proper error handling and file locking to prevent race conditions.
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, List, Optional
 
 # ロガーを設定
 logger = logging.getLogger("env_manager")

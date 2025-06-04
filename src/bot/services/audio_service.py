@@ -13,8 +13,8 @@ import soundfile as sf
 # 親ディレクトリをインポートパスに追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# パスを設定後に config をインポート
-from src.bot import config
+# Import config after setting path
+from src.bot import config  # noqa: E402
 
 # ロギングを設定
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ def record_with_silence_detection(
         if temp_file and os.path.exists(filename):
             try:
                 os.remove(filename)
-            except:
+            except Exception:
                 pass
         return None
 

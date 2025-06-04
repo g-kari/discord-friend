@@ -1,8 +1,5 @@
-import os
-import sys
-import tempfile
 import unittest
-from unittest.mock import MagicMock, call, mock_open, patch
+from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 
@@ -12,7 +9,7 @@ import src.bot.services.audio_service
 HAS_SOUNDDEVICE = src.bot.services.audio_service.sd is not None
 
 # Assuming audio_service.py is in src.bot.services
-from src.bot.services.audio_service import (
+from src.bot.services.audio_service import (  # noqa: E402
     cleanup_audio_files,
     record_with_silence_detection,
 )
@@ -105,7 +102,7 @@ class TestAudioService(unittest.TestCase):
         # Simulate stream reading behavior
         # Let's say read is called every 0.1 seconds (blocksize = samplerate / 10)
         blocksize = samplerate // 10
-        num_blocks_for_max_duration = (5 * samplerate) // blocksize
+        # num_blocks_for_max_duration = (5 * samplerate) // blocksize  # unused
 
         # This mock will be called multiple times.
         # We want it to provide non-silent data until max_duration is effectively reached.
@@ -262,9 +259,9 @@ class TestAudioService(unittest.TestCase):
         # Initial sound was 1 second (num_initial_sound_blocks * block_duration)
         # Silence detection kicks in after silence_duration_config of silence.
         # The recording includes the initial sound and the silence period that triggered the stop.
-        expected_frames = (
-            num_initial_sound_blocks + num_silence_blocks_needed - 1
-        ) * blocksize  # -1 because the loop breaks after condition is met
+        # expected_frames = (
+        #     num_initial_sound_blocks + num_silence_blocks_needed - 1
+        # ) * blocksize  # -1 because the loop breaks after condition is met - unused
 
         # The actual number of frames can be tricky due to how silence is measured and loop breaks.
         # It should contain the initial non-silent part, and then the part of silence that triggered the condition.

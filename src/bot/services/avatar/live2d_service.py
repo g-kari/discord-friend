@@ -7,13 +7,9 @@ This module provides functionality to:
 3. Send these avatars to Discord
 """
 
-import asyncio
 import io
 import logging
 import os
-import random
-import time
-from pathlib import Path
 
 import discord
 from PIL import Image, ImageDraw, ImageFont

@@ -1,4 +1,3 @@
-import os
 import sqlite3
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -277,8 +276,6 @@ if __name__ == "__main__":
                         with patch("src.bot.services.ai_service.AIAvatar", MagicMock()):
                             unittest.main()
 
-
-from unittest.mock import AsyncMock  # Add AsyncMock
 
 # Keep other imports like sqlite3, os, patch, MagicMock as they are.
 

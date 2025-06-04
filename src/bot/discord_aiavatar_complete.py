@@ -242,7 +242,10 @@ try:
             conn = get_db_connection()
             c = conn.cursor()
             c.execute(
-                "INSERT INTO conversation_history (user_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+                (
+                    "INSERT INTO conversation_history "
+                    "(user_id, role, content, timestamp) VALUES (?, ?, ?, ?)"
+                ),
                 (user_id, role, content, datetime_to_str(datetime.now())),
             )
             conn.commit()
@@ -255,7 +258,10 @@ try:
             conn = get_db_connection()
             c = conn.cursor()
             c.execute(
-                "SELECT role, content FROM conversation_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
+                (
+                    "SELECT role, content FROM conversation_history "
+                    "WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?"
+                ),
                 (user_id, limit),
             )
             rows = c.fetchall()
@@ -532,7 +538,8 @@ try:
                 and voice_client_in_guild.is_connected()
             ):
                 logger.info(
-                    f"Bot is in a voice channel in guild '{message.guild.name}'. Processing message from '{message.author.name}': '{message.content}'"
+                    f"Bot is in a voice channel in guild '{message.guild.name}'. "
+                    f"Processing message from '{message.author.name}': '{message.content}'"
                 )
 
                 user_id = message.author.id
@@ -550,7 +557,8 @@ try:
                         f"Fetched system prompt for {username}: '{system_prompt[:50]}...'"
                     )
 
-                    # 2. Save User's Message (do this before LLM call to include it in subsequent history calls if needed immediately)
+                    # 2. Save User's Message (do this before LLM call to include it in
+                    #    subsequent history calls if needed immediately)
                     save_message(user_id, "user", message.content)
                     logger.debug(f"Saved user message for {username}.")
 
@@ -715,8 +723,14 @@ try:
                                         0.1
                                     )  # Short pause to allow stop to take effect
 
+                                channel_name = (
+                                    voice_client_in_guild.channel.name
+                                    if hasattr(voice_client_in_guild.channel, "name")
+                                    else "unknown"
+                                )
                                 logger.info(
-                                    f"Playing TTS audio for {username} in voice channel {voice_client_in_guild.channel.name if hasattr(voice_client_in_guild.channel, 'name') else 'unknown'}."
+                                    f"Playing TTS audio for {username} in voice channel "
+                                    f"{channel_name}."
                                 )
                                 voice_client_in_guild.play(
                                     FFmpegPCMAudio(tts_audio_path)
@@ -1578,7 +1592,7 @@ try:
             try:
                 discord_user = await bot.fetch_user(user_id_int)
                 user_name = f"{discord_user.name}#{discord_user.discriminator}"
-            except:
+            except Exception:
                 user_name = f"Unknown ({user_id_int})"
 
             # ユーザー設定をリセット
@@ -1792,7 +1806,7 @@ try:
                 logger.error("音声データの保存に失敗したため会話処理を中止します")
                 try:
                     os.remove(filename)
-                except:
+                except Exception:
                     pass
                 return
 

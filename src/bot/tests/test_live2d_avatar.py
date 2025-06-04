@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,7 +11,7 @@ from PIL import Image
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.avatar.live2d_service import (
+from services.avatar.live2d_service import (  # noqa: E402
     AVATAR_STATE_IDLE,
     AVATAR_STATE_TALKING,
     AVATAR_STATE_THINKING,

@@ -3,7 +3,6 @@
 """
 
 import logging
-import os
 import pathlib
 from logging.handlers import RotatingFileHandler
 

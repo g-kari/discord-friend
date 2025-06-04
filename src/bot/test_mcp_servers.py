@@ -56,13 +56,13 @@ class TestMCPServerConfig(unittest.TestCase):
     def test_connection_simulation(self):
         """サーバー接続の模擬テスト"""
         # 実際に接続はしないが、コードが適切に動作するか確認
-        test_config = {"TestServer": ["VoiceChannel1", "VoiceChannel2"]}
+        # test_config = {"TestServer": ["VoiceChannel1", "VoiceChannel2"]}
 
         # ドキュメント文字列として、実行手順を説明
         print(
             """
         サーバー接続シミュレーション:
-        1. 環境変数 MCP_SERVERS に設定: 
+        1. 環境変数 MCP_SERVERS に設定:
            {"TestServer": ["VoiceChannel1", "VoiceChannel2"]}
         2. Bot起動
         3. 期待される動作：
