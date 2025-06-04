@@ -10,8 +10,7 @@ HAS_SOUNDDEVICE = src.bot.services.audio_service.sd is not None
 
 # Assuming audio_service.py is in src.bot.services
 from src.bot.services.audio_service import (  # noqa: E402
-    cleanup_audio_files,
-    record_with_silence_detection,
+    cleanup_audio_files, record_with_silence_detection,
 )
 
 
@@ -19,35 +18,30 @@ class TestAudioService(unittest.TestCase):
 
     @patch("src.bot.services.audio_service.os.path.exists")
     @patch("src.bot.services.audio_service.os.remove")
-    def test_cleanup_audio_files_existing_files(
-        self, mock_os_remove, mock_os_path_exists
-    ):
+    def test_cleanup_audio_files_existing_files(self, mock_os_remove,
+                                                mock_os_path_exists):
         mock_os_path_exists.return_value = True
         files_to_clean = ["file1.wav", "file2.wav"]
 
         cleanup_audio_files(files_to_clean)
 
         mock_os_path_exists.assert_has_calls(
-            [call("file1.wav"), call("file2.wav")], any_order=True
-        )
+            [call("file1.wav"), call("file2.wav")], any_order=True)
         mock_os_remove.assert_has_calls(
-            [call("file1.wav"), call("file2.wav")], any_order=True
-        )
+            [call("file1.wav"), call("file2.wav")], any_order=True)
         self.assertEqual(mock_os_remove.call_count, 2)
 
     @patch("src.bot.services.audio_service.os.path.exists")
     @patch("src.bot.services.audio_service.os.remove")
-    def test_cleanup_audio_files_non_existing_files(
-        self, mock_os_remove, mock_os_path_exists
-    ):
+    def test_cleanup_audio_files_non_existing_files(self, mock_os_remove,
+                                                    mock_os_path_exists):
         mock_os_path_exists.return_value = False
         files_to_clean = ["file1.wav", "file2.wav"]
 
         cleanup_audio_files(files_to_clean)
 
         mock_os_path_exists.assert_has_calls(
-            [call("file1.wav"), call("file2.wav")], any_order=True
-        )
+            [call("file1.wav"), call("file2.wav")], any_order=True)
         mock_os_remove.assert_not_called()
 
     @patch("src.bot.services.audio_service.os.path.exists")
@@ -71,9 +65,8 @@ class TestAudioService(unittest.TestCase):
 
     # Test that returns None when sounddevice is not available
     @unittest.skipIf(not HAS_SOUNDDEVICE, "sounddevice not available")
-    @patch(
-        "src.bot.services.audio_service.sd", None
-    )  # Force sd to be None for this test
+    @patch("src.bot.services.audio_service.sd",
+           None)  # Force sd to be None for this test
     def test_record_with_silence_detection_no_sounddevice(self):
         result = record_with_silence_detection()
         self.assertIsNone(result)
@@ -82,9 +75,8 @@ class TestAudioService(unittest.TestCase):
     @patch("src.bot.services.audio_service.tempfile.NamedTemporaryFile")
     @patch("src.bot.services.audio_service.sf.write")
     @patch("src.bot.services.audio_service.sd.InputStream")
-    def test_record_stops_after_max_duration(
-        self, mock_input_stream_class, mock_sf_write, mock_temp_file
-    ):
+    def test_record_stops_after_max_duration(self, mock_input_stream_class,
+                                             mock_sf_write, mock_temp_file):
         # Configure mocks
         mock_stream_instance = MagicMock()
         mock_input_stream_class.return_value = mock_stream_instance
@@ -95,13 +87,13 @@ class TestAudioService(unittest.TestCase):
         # We need enough data to exceed max_duration
         samplerate = 16000
         channels = 1
-        audio_chunk = np.array(
-            [[0.5]] * samplerate, dtype=np.float32
-        )  # 1 second of non-silent audio
+        audio_chunk = np.array([[0.5]] * samplerate,
+                               dtype=np.float32)  # 1 second of non-silent audio
 
         # Simulate stream reading behavior
         # Let's say read is called every 0.1 seconds (blocksize = samplerate / 10)
         blocksize = samplerate // 10
+
         # num_blocks_for_max_duration = (5 * samplerate) // blocksize  # unused
 
         # This mock will be called multiple times.
@@ -153,23 +145,19 @@ class TestAudioService(unittest.TestCase):
         # Each read call reads `blocksize` frames.
         # The loop for recording runs roughly max_duration / (blocksize/samplerate) times
         # Total frames = (max_duration * 10) * blocksize = max_duration * samplerate
-        self.assertGreaterEqual(
-            len(args[1]), (5 * samplerate) - blocksize
-        )  # Allow for one block less due to timing
-        self.assertLessEqual(
-            len(args[1]), 5 * samplerate + blocksize
-        )  # Allow for one block more
+        self.assertGreaterEqual(len(args[1]), (5 * samplerate) -
+                                blocksize)  # Allow for one block less due to timing
+        self.assertLessEqual(len(args[1]),
+                             5 * samplerate + blocksize)  # Allow for one block more
 
     @unittest.skipIf(not HAS_SOUNDDEVICE, "sounddevice not available")
     @patch("src.bot.services.audio_service.tempfile.NamedTemporaryFile")
     @patch("src.bot.services.audio_service.sf.write")
     @patch("src.bot.services.audio_service.sd.InputStream")
-    @patch(
-        "src.bot.services.audio_service.time.time"
-    )  # Mock time to control silence detection
-    def test_record_stops_due_to_silence(
-        self, mock_time, mock_input_stream_class, mock_sf_write, mock_temp_file
-    ):
+    @patch("src.bot.services.audio_service.time.time"
+           )  # Mock time to control silence detection
+    def test_record_stops_due_to_silence(self, mock_time, mock_input_stream_class,
+                                         mock_sf_write, mock_temp_file):
         # Configure mocks
         mock_stream_instance = MagicMock()
         mock_input_stream_class.return_value = mock_stream_instance
@@ -191,9 +179,8 @@ class TestAudioService(unittest.TestCase):
         # 1 second of non-silent data = 10 blocks
         # Then enough silent blocks to trigger silence_duration
         num_initial_sound_blocks = 10
-        num_silence_blocks_needed = (
-            silence_duration_config * samplerate
-        ) // blocksize + 1  # +1 to ensure duration is met
+        num_silence_blocks_needed = (silence_duration_config * samplerate
+                                     ) // blocksize + 1  # +1 to ensure duration is met
 
         read_count = 0
 
@@ -223,12 +210,10 @@ class TestAudioService(unittest.TestCase):
         # t=1.0 + silence_duration_config (e.g., 1.0 + 2.0 = 3.0): silence condition met
         time_ticks = [0.0]  # start_time
         # Simulate time for initial sound + silence duration
-        for i in range(
-            num_initial_sound_blocks + num_silence_blocks_needed + 5
-        ):  # Add a few extra ticks
-            time_ticks.append(
-                time_ticks[-1] + (blocksize / samplerate)
-            )  # each block takes 0.1s
+        for i in range(num_initial_sound_blocks + num_silence_blocks_needed +
+                       5):  # Add a few extra ticks
+            time_ticks.append(time_ticks[-1] +
+                              (blocksize / samplerate))  # each block takes 0.1s
         mock_time.side_effect = time_ticks
 
         filename = record_with_silence_detection(

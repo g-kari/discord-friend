@@ -101,9 +101,9 @@ async def get_ai_response(text, history=None, system_prompt=None, channel=None):
             cushion_task, cancel_event = await create_cushion_task(channel)
 
         # LLM APIを呼び出し
-        response = await aiavatar.llm.chat(
-            text, history=history or [], system_prompt=system_prompt
-        )
+        response = await aiavatar.llm.chat(text,
+                                           history=history or [],
+                                           system_prompt=system_prompt)
         return response
     except Exception as e:
         print(f"AI応答エラー: {e}")

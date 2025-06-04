@@ -52,8 +52,6 @@ try:
 except ImportError:
     logger.warning("aiavatar がインストールされていません")
 except AttributeError:
-    logger.warning(
-        "aiavatar はインストールされていますが、バージョン情報が取得できません"
-    )
+    logger.warning("aiavatar はインストールされていますが、バージョン情報が取得できません")
 
 logger.info("デバッグ完了")

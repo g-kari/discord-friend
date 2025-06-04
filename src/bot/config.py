@@ -51,9 +51,7 @@ if mcp_servers_env:
     try:
         MCP_SERVERS = json.loads(mcp_servers_env)
     except json.JSONDecodeError:
-        logger.error(
-            "警告: MCP_SERVERSの形式が正しくありません。JSONフォーマットで指定してください。"
-        )
+        logger.error("警告: MCP_SERVERSの形式が正しくありません。JSONフォーマットで指定してください。")
 
 # 自動接続するMCPサーバーとチャンネルの設定
 # フォーマット: {"サーバー名": ["チャンネル名1", "チャンネル名2", ...], ...}
@@ -64,6 +62,4 @@ if mcp_servers_env:
     try:
         MCP_SERVERS = json.loads(mcp_servers_env)
     except json.JSONDecodeError:
-        logger.error(
-            "警告: MCP_SERVERSの形式が正しくありません。JSONフォーマットで指定してください。"
-        )
+        logger.error("警告: MCP_SERVERSの形式が正しくありません。JSONフォーマットで指定してください。")

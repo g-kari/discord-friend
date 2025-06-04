@@ -21,8 +21,7 @@ def init_db():
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     # 会話履歴テーブル
-    c.execute(
-        """
+    c.execute("""
     CREATE TABLE IF NOT EXISTS conversation_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -30,39 +29,32 @@ def init_db():
         content TEXT NOT NULL,
         timestamp DATETIME NOT NULL
     )
-    """
-    )
+    """)
     # システムプロンプトテーブル
-    c.execute(
-        """
+    c.execute("""
     CREATE TABLE IF NOT EXISTS system_prompts (
         user_id INTEGER PRIMARY KEY,
         prompt TEXT NOT NULL,
         created_at DATETIME NOT NULL
     )
-    """
-    )
+    """)
     # デフォルトシステムプロンプトテーブル
-    c.execute(
-        """
+    c.execute("""
     CREATE TABLE IF NOT EXISTS default_system_prompt (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         prompt TEXT NOT NULL,
         updated_at DATETIME NOT NULL
     )
-    """
-    )
+    """)
     # 録音設定テーブル
-    c.execute(
-        """
+    c.execute("""
     CREATE TABLE IF NOT EXISTS recording_settings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL UNIQUE,
         enabled BOOLEAN NOT NULL DEFAULT 1,
         keyword TEXT
     )
-    """
-    )
+    """)
     conn.commit()
     conn.close()
 
@@ -79,7 +71,8 @@ def save_message(user_id, role, content):
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT INTO conversation_history (user_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+        "INSERT INTO conversation_history (user_id, role, content, timestamp) "
+        "VALUES (?, ?, ?, ?)",
         (user_id, role, content, datetime.now()),
     )
     conn.commit()
@@ -100,7 +93,8 @@ def get_user_history(user_id, limit=10):
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute(
-        "SELECT role, content FROM conversation_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
+        "SELECT role, content FROM conversation_history WHERE user_id = ? "
+        "ORDER BY timestamp DESC LIMIT ?",
         (user_id, limit),
     )
     rows = c.fetchall()
@@ -119,7 +113,7 @@ def clear_user_history(user_id):
     """
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
-    c.execute("DELETE FROM conversation_history WHERE user_id = ?", (user_id,))
+    c.execute("DELETE FROM conversation_history WHERE user_id = ?", (user_id, ))
     conn.commit()
     conn.close()
 
@@ -135,7 +129,8 @@ def set_user_prompt(user_id, prompt):
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT OR REPLACE INTO system_prompts (user_id, prompt, created_at) VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO system_prompts (user_id, prompt, created_at) "
+        "VALUES (?, ?, ?)",
         (user_id, prompt, datetime.now()),
     )
     conn.commit()
@@ -156,7 +151,8 @@ def set_default_system_prompt(prompt):
         conn = sqlite3.connect(config.DB_PATH)
         c = conn.cursor()
         c.execute(
-            "INSERT OR REPLACE INTO default_system_prompt (id, prompt, updated_at) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO default_system_prompt (id, prompt, updated_at) "
+            "VALUES (?, ?, ?)",
             (1, prompt, datetime.now()),
         )
         conn.commit()
@@ -173,9 +169,7 @@ def get_default_system_prompt():
     Returns:
         デフォルトのシステムプロンプト（なければハードコードされた値）
     """
-    DEFAULT_SYSTEM_PROMPT = (
-        "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
-    )
+    DEFAULT_SYSTEM_PROMPT = ("あなたは親切なAIアシスタントです。質問に簡潔に答えてください。")
     try:
         conn = sqlite3.connect(config.DB_PATH)
         c = conn.cursor()
@@ -199,7 +193,7 @@ def get_user_prompt(user_id):
     """
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id,))
+    c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id, ))
     row = c.fetchone()
     conn.close()
 
@@ -222,7 +216,8 @@ def set_recording_enabled(user_id, enabled=True, keyword=None):
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT OR REPLACE INTO recording_settings (user_id, enabled, keyword) VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO recording_settings (user_id, enabled, keyword) "
+        "VALUES (?, ?, ?)",
         (user_id, enabled, keyword),
     )
     conn.commit()
@@ -244,10 +239,10 @@ def reset_user_settings(user_id):
         c = conn.cursor()
 
         # システムプロンプトを削除
-        c.execute("DELETE FROM system_prompts WHERE user_id = ?", (user_id,))
+        c.execute("DELETE FROM system_prompts WHERE user_id = ?", (user_id, ))
 
         # 録音設定をリセット
-        c.execute("DELETE FROM recording_settings WHERE user_id = ?", (user_id,))
+        c.execute("DELETE FROM recording_settings WHERE user_id = ?", (user_id, ))
 
         conn.commit()
         conn.close()
@@ -323,7 +318,7 @@ def prune_old_conversations(days):
             DELETE FROM conversation_history
             WHERE julianday('now') - julianday(timestamp) > ?
             """,
-            (days,),
+            (days, ),
         )
 
         deleted_count = c.rowcount
@@ -348,9 +343,8 @@ def get_recording_settings(user_id):
     """
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
-    c.execute(
-        "SELECT enabled, keyword FROM recording_settings WHERE user_id = ?", (user_id,)
-    )
+    c.execute("SELECT enabled, keyword FROM recording_settings WHERE user_id = ?",
+              (user_id, ))
     row = c.fetchone()
     conn.close()
     if not row:
@@ -402,20 +396,20 @@ def get_user_settings(user_id):
     c = conn.cursor()
 
     # システムプロンプト
-    c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id,))
+    c.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (user_id, ))
     prompt_row = c.fetchone()
     prompt = prompt_row[0] if prompt_row else None
 
     # 録音設定
-    c.execute(
-        "SELECT enabled, keyword FROM recording_settings WHERE user_id = ?", (user_id,)
-    )
+    c.execute("SELECT enabled, keyword FROM recording_settings WHERE user_id = ?",
+              (user_id, ))
     recording_row = c.fetchone()
     recording_enabled = recording_row[0] if recording_row else True
     keyword = recording_row[1] if recording_row else None
 
     # 会話履歴の件数
-    c.execute("SELECT COUNT(*) FROM conversation_history WHERE user_id = ?", (user_id,))
+    c.execute("SELECT COUNT(*) FROM conversation_history WHERE user_id = ?",
+              (user_id, ))
     message_count = c.fetchone()[0]
 
     conn.close()

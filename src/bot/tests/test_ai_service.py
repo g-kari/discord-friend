@@ -22,11 +22,9 @@ class TestAIService(unittest.TestCase):
         self.mock_aiavatar = MagicMock()
         # Mock the methods that would be called on AIAvatar's components
         self.mock_aiavatar.stt.transcribe = AsyncMock(
-            return_value="This is a test transcription."
-        )
+            return_value="This is a test transcription.")
         self.mock_aiavatar.llm.chat = AsyncMock(
-            return_value="This is a test AI response."
-        )
+            return_value="This is a test AI response.")
         self.mock_aiavatar.tts.speak = AsyncMock(return_value=b"dummy_speech_output")
 
     @pytest.mark.asyncio
@@ -63,9 +61,8 @@ class TestAIService(unittest.TestCase):
     @pytest.mark.asyncio
     @patch("src.bot.services.ai_service.aiavatar")
     @patch("src.bot.services.ai_service.create_cushion_task")
-    async def test_get_ai_response_success(
-        self, mock_create_cushion_task, mock_aiavatar
-    ):
+    async def test_get_ai_response_success(self, mock_create_cushion_task,
+                                           mock_aiavatar):
         mock_aiavatar.llm.chat = AsyncMock(return_value="AI response")
 
         # Mock cushion task
@@ -90,9 +87,8 @@ class TestAIService(unittest.TestCase):
     @pytest.mark.asyncio
     @patch("src.bot.services.ai_service.aiavatar")
     @patch("src.bot.services.ai_service.create_cushion_task")
-    async def test_get_ai_response_failure(
-        self, mock_create_cushion_task, mock_aiavatar
-    ):
+    async def test_get_ai_response_failure(self, mock_create_cushion_task,
+                                           mock_aiavatar):
         mock_aiavatar.llm.chat = AsyncMock(side_effect=Exception("LLM Error"))
 
         # Mock cushion task
@@ -137,17 +133,15 @@ class TestAIService(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_check_keyword_match(self):
-        self.assertTrue(
-            check_keyword_match("some text", None)
-        )  # None keyword should return True
+        self.assertTrue(check_keyword_match("some text",
+                                            None))  # None keyword should return True
         self.assertTrue(check_keyword_match("Hello world", "world"))
         self.assertTrue(check_keyword_match("Hello WORLD", "world"))  # Case-insensitive
         self.assertFalse(check_keyword_match("Hello world", "test"))
         self.assertFalse(check_keyword_match("", "keyword"))
         self.assertFalse(check_keyword_match("some text", ""))  # Empty keyword
-        self.assertFalse(
-            check_keyword_match("another example", "exa mple")
-        )  # Keyword with space
+        self.assertFalse(check_keyword_match("another example",
+                                             "exa mple"))  # Keyword with space
         self.assertTrue(check_keyword_match("keyword at start", "keyword"))
         self.assertTrue(check_keyword_match("end keyword", "keyword"))
         self.assertTrue(check_keyword_match("this is a KEYWORD in middle", "keyword"))
@@ -185,15 +179,14 @@ class TestAIService(unittest.TestCase):
         mock_channel.send = AsyncMock()
 
         # Call our function
-        result = await send_conversation_cushions(
-            mock_channel, interval=0.1, max_cushions=2
-        )
+        result = await send_conversation_cushions(mock_channel,
+                                                  interval=0.1,
+                                                  max_cushions=2)
 
         # Check results
         self.assertEqual(len(result), 2)  # Should have 2 sent messages
-        self.assertEqual(
-            mock_channel.send.call_count, 2
-        )  # send() should be called twice
+        self.assertEqual(mock_channel.send.call_count,
+                         2)  # send() should be called twice
         mock_sleep.assert_called()  # sleep should have been called
 
     @pytest.mark.asyncio

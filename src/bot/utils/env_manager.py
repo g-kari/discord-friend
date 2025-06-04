@@ -59,8 +59,7 @@ except ImportError:
     except ImportError:
         # ロック機構が使用できない場合のフォールバック
         logger.warning(
-            "File locking not available on this system. Race conditions may occur."
-        )
+            "File locking not available on this system. Race conditions may occur.")
 
         def lock_file(f):
             """Dummy lock function when locking is unavailable"""
@@ -229,8 +228,7 @@ def update_env_variable(
         result = write_env_file(env_file, lines)
         if result:
             logger.info(
-                f"Successfully updated environment variable in {env_file}: {key}"
-            )
+                f"Successfully updated environment variable in {env_file}: {key}")
         return result
 
     except Exception as e:
@@ -238,9 +236,9 @@ def update_env_variable(
         return False
 
 
-def remove_env_variable(
-    key: str, env_file: Optional[str] = None, search_paths: Optional[List[str]] = None
-) -> bool:
+def remove_env_variable(key: str,
+                        env_file: Optional[str] = None,
+                        search_paths: Optional[List[str]] = None) -> bool:
     """
     Remove an environment variable from the .env file.
 
@@ -279,8 +277,7 @@ def remove_env_variable(
         result = write_env_file(env_file, new_lines)
         if result:
             logger.info(
-                f"Successfully removed environment variable from {env_file}: {key}"
-            )
+                f"Successfully removed environment variable from {env_file}: {key}")
         return result
 
     except Exception as e:

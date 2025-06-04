@@ -12,14 +12,12 @@ from PIL import Image
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.avatar.live2d_service import (  # noqa: E402
-    AVATAR_STATE_IDLE,
-    AVATAR_STATE_TALKING,
-    AVATAR_STATE_THINKING,
-    Live2DAvatar,
+    AVATAR_STATE_IDLE, AVATAR_STATE_TALKING, AVATAR_STATE_THINKING, Live2DAvatar,
 )
 
 
 class TestLive2DAvatar(unittest.TestCase):
+
     def setUp(self):
         # Create a temporary directory for testing
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -55,9 +53,9 @@ class TestLive2DAvatar(unittest.TestCase):
         """Test that send_avatar_to_channel correctly sends a file to the channel"""
         mock_channel.send = AsyncMock(return_value=MagicMock())
 
-        result = await self.avatar.send_avatar_to_channel(
-            mock_channel, AVATAR_STATE_IDLE, "Test message"
-        )
+        result = await self.avatar.send_avatar_to_channel(mock_channel,
+                                                          AVATAR_STATE_IDLE,
+                                                          "Test message")
 
         # Check that send was called
         mock_channel.send.assert_called_once()
