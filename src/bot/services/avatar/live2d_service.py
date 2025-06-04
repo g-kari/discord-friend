@@ -44,17 +44,13 @@ class Live2DAvatar:
             avatar_dir: Directory containing avatar assets (if any)
         """
         self.current_state = AVATAR_STATE_IDLE
-        self.avatar_dir = avatar_dir or os.path.join(
-            os.path.dirname(__file__), "assets"
-        )
+        self.avatar_dir = avatar_dir or os.path.join(os.path.dirname(__file__), "assets")
 
         # Create assets directory if it doesn't exist
         os.makedirs(self.avatar_dir, exist_ok=True)
 
         # Log initialization
-        logger.info(
-            f"Live2D avatar service initialized with asset directory: {self.avatar_dir}"
-        )
+        logger.info(f"Live2D avatar service initialized with asset directory: {self.avatar_dir}")
 
     def _create_simple_avatar(self, state, text=None):
         """
@@ -164,9 +160,7 @@ class Live2DAvatar:
             )
 
         # Draw state text
-        draw.text(
-            (10, 10), f"State: {state}", fill=DEFAULT_AVATAR_TEXT_COLOR, font=font
-        )
+        draw.text((10, 10), f"State: {state}", fill=DEFAULT_AVATAR_TEXT_COLOR, font=font)
 
         # Draw optional text
         if text:
@@ -226,9 +220,7 @@ class Live2DAvatar:
             avatar_bytes = self.render_avatar(state, text)
 
             # Create file object from bytes
-            file = discord.File(
-                io.BytesIO(avatar_bytes), filename=f"avatar_{state}.png"
-            )
+            file = discord.File(io.BytesIO(avatar_bytes), filename=f"avatar_{state}.png")
 
             # Send to channel
             message = await channel.send(file=file)

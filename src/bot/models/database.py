@@ -79,7 +79,8 @@ def save_message(user_id, role, content):
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT INTO conversation_history (user_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+        "INSERT INTO conversation_history (user_id, role, content, timestamp) "
+        "VALUES (?, ?, ?, ?)",
         (user_id, role, content, datetime.now()),
     )
     conn.commit()
@@ -100,7 +101,8 @@ def get_user_history(user_id, limit=10):
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute(
-        "SELECT role, content FROM conversation_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
+        "SELECT role, content FROM conversation_history WHERE user_id = ? "
+        "ORDER BY timestamp DESC LIMIT ?",
         (user_id, limit),
     )
     rows = c.fetchall()
@@ -135,7 +137,7 @@ def set_user_prompt(user_id, prompt):
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT OR REPLACE INTO system_prompts (user_id, prompt, created_at) VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO system_prompts (user_id, prompt, created_at) " "VALUES (?, ?, ?)",
         (user_id, prompt, datetime.now()),
     )
     conn.commit()
@@ -156,7 +158,8 @@ def set_default_system_prompt(prompt):
         conn = sqlite3.connect(config.DB_PATH)
         c = conn.cursor()
         c.execute(
-            "INSERT OR REPLACE INTO default_system_prompt (id, prompt, updated_at) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO default_system_prompt (id, prompt, updated_at) "
+            "VALUES (?, ?, ?)",
             (1, prompt, datetime.now()),
         )
         conn.commit()
@@ -173,9 +176,7 @@ def get_default_system_prompt():
     Returns:
         デフォルトのシステムプロンプト（なければハードコードされた値）
     """
-    DEFAULT_SYSTEM_PROMPT = (
-        "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
-    )
+    DEFAULT_SYSTEM_PROMPT = "あなたは親切なAIアシスタントです。質問に簡潔に答えてください。"
     try:
         conn = sqlite3.connect(config.DB_PATH)
         c = conn.cursor()
@@ -222,7 +223,7 @@ def set_recording_enabled(user_id, enabled=True, keyword=None):
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT OR REPLACE INTO recording_settings (user_id, enabled, keyword) VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO recording_settings (user_id, enabled, keyword) " "VALUES (?, ?, ?)",
         (user_id, enabled, keyword),
     )
     conn.commit()
@@ -348,9 +349,7 @@ def get_recording_settings(user_id):
     """
     conn = sqlite3.connect(config.DB_PATH)
     c = conn.cursor()
-    c.execute(
-        "SELECT enabled, keyword FROM recording_settings WHERE user_id = ?", (user_id,)
-    )
+    c.execute("SELECT enabled, keyword FROM recording_settings WHERE user_id = ?", (user_id,))
     row = c.fetchone()
     conn.close()
     if not row:
@@ -407,9 +406,7 @@ def get_user_settings(user_id):
     prompt = prompt_row[0] if prompt_row else None
 
     # 録音設定
-    c.execute(
-        "SELECT enabled, keyword FROM recording_settings WHERE user_id = ?", (user_id,)
-    )
+    c.execute("SELECT enabled, keyword FROM recording_settings WHERE user_id = ?", (user_id,))
     recording_row = c.fetchone()
     recording_enabled = recording_row[0] if recording_row else True
     keyword = recording_row[1] if recording_row else None

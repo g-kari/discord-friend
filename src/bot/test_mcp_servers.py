@@ -82,14 +82,14 @@ class TestMCPServerConfig(unittest.TestCase):
         print(
             """
         MCPサーバー管理コマンドシミュレーション:
-        
+
         1. `/add_mcp_server` コマンド:
            - 現在のボイスチャンネルをMCPサーバーリストに追加
            - add_to_config:true パラメータで永続的に保存可能
-        
+
         2. `/list_mcp_servers` コマンド:
            - 現在設定されているMCPサーバーとチャンネルの一覧を表示
-        
+
         3. `/remove_mcp_server` コマンド:
            - 引数なし: 現在参加中のチャンネルをリストから削除
            - server_name, channel_name: 指定したサーバーのチャンネルを削除

@@ -20,6 +20,7 @@ from services.avatar.live2d_service import (  # noqa: E402
 
 
 class TestLive2DAvatar(unittest.TestCase):
+
     def setUp(self):
         # Create a temporary directory for testing
         self.temp_dir = tempfile.TemporaryDirectory()
