@@ -52,7 +52,9 @@ def record_with_silence_detection(
     """
     # Check if sounddevice is available
     if sd is None:
-        logger.error(f"sounddeviceがインポートできないため録音できません: {sounddevice_import_error}")
+        logger.error(
+            f"sounddeviceがインポートできないため録音できません: {sounddevice_import_error}"
+        )
         return None
 
     # ファイル名が指定されていない場合は一時ファイルを作成
@@ -67,10 +69,9 @@ def record_with_silence_detection(
         frames = []
         silence_count = 0
         blocksize = int(samplerate * 0.1)  # 0.1秒ごと
-        stream = sd.InputStream(samplerate=samplerate,
-                                channels=1,
-                                dtype="float32",
-                                blocksize=blocksize)
+        stream = sd.InputStream(
+            samplerate=samplerate, channels=1, dtype="float32", blocksize=blocksize
+        )
 
         with stream:
             for _ in range(int(max_duration / 0.1)):

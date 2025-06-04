@@ -59,7 +59,8 @@ class TestMCPServerConfig(unittest.TestCase):
         # test_config = {"TestServer": ["VoiceChannel1", "VoiceChannel2"]}
 
         # ドキュメント文字列として、実行手順を説明
-        print("""
+        print(
+            """
         サーバー接続シミュレーション:
         1. 環境変数 MCP_SERVERS に設定:
            {"TestServer": ["VoiceChannel1", "VoiceChannel2"]}
@@ -69,7 +70,8 @@ class TestMCPServerConfig(unittest.TestCase):
            - "サーバー「TestServer」の設定されたチャンネルに自動接続します" のログ
            - 各チャンネルの検索と接続試行
            - 接続エラー時の例外ハンドリング
-        """)
+        """
+        )
 
         # この部分は実際には実行されないが、動作の説明として記述
         self.assertTrue(True)  # ダミーアサーション
@@ -77,7 +79,8 @@ class TestMCPServerConfig(unittest.TestCase):
     def test_mcp_management_commands(self):
         """MCPサーバー管理コマンドのテスト"""
         # 実際にコマンドは実行しないが、コマンドの説明として記述
-        print("""
+        print(
+            """
         MCPサーバー管理コマンドシミュレーション:
         
         1. `/add_mcp_server` コマンド:
@@ -91,7 +94,8 @@ class TestMCPServerConfig(unittest.TestCase):
            - 引数なし: 現在参加中のチャンネルをリストから削除
            - server_name, channel_name: 指定したサーバーのチャンネルを削除
            - remove_from_config:true: 設定ファイルからも永続的に削除
-        """)
+        """
+        )
 
         # この部分は実際には実行されないが、動作の説明として記述
         self.assertTrue(True)  # ダミーアサーション

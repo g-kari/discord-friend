@@ -48,7 +48,8 @@ class TestDatabaseFunctions(unittest.TestCase):
         cursor = conn.cursor()
 
         # Create tables in this connection
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS conversation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -56,46 +57,48 @@ class TestDatabaseFunctions(unittest.TestCase):
                 content TEXT NOT NULL,
                 timestamp TEXT NOT NULL
             )
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS system_prompts (
                 user_id INTEGER PRIMARY KEY,
                 prompt TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS recording_settings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL UNIQUE,
                 enabled BOOLEAN NOT NULL DEFAULT 1,
                 keyword TEXT
             )
-        """)
+        """
+        )
         conn.commit()
 
         # Check for conversation_history table
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_history';"
         )
-        self.assertIsNotNone(cursor.fetchone(),
-                             "conversation_history table should be created")
+        self.assertIsNotNone(cursor.fetchone(), "conversation_history table should be created")
 
         # Check for system_prompts table
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='system_prompts';"
         )
-        self.assertIsNotNone(cursor.fetchone(),
-                             "system_prompts table should be created")
+        self.assertIsNotNone(cursor.fetchone(), "system_prompts table should be created")
 
         # Check for recording_settings table
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='recording_settings';"
         )
-        self.assertIsNotNone(cursor.fetchone(),
-                             "recording_settings table should be created")
+        self.assertIsNotNone(cursor.fetchone(), "recording_settings table should be created")
         conn.close()
 
     @patch("src.bot.discord_aiavatar_complete.DB_NAME", ":memory:")
@@ -105,7 +108,8 @@ class TestDatabaseFunctions(unittest.TestCase):
         cursor = conn.cursor()
 
         # Create necessary tables
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS conversation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -113,7 +117,8 @@ class TestDatabaseFunctions(unittest.TestCase):
                 content TEXT NOT NULL,
                 timestamp TEXT NOT NULL
             )
-        """)
+        """
+        )
         conn.commit()
 
         # Define a simpler save_message for testing
@@ -161,8 +166,7 @@ class TestDatabaseFunctions(unittest.TestCase):
         history = self.get_user_history(user_id, limit=4)
         self.assertEqual(len(history), 4)
         self.assertEqual(history[0]["content"], "Response 4")  # Most recent
-        self.assertEqual(history[3]["content"],
-                         "Message 3")  # Oldest in the limited set
+        self.assertEqual(history[3]["content"], "Message 3")  # Oldest in the limited set
 
     @patch("src.bot.discord_aiavatar_complete.DB_NAME", ":memory:")
     def test_get_user_history_no_messages(self):
@@ -177,13 +181,15 @@ class TestDatabaseFunctions(unittest.TestCase):
         cursor = conn.cursor()
 
         # Create necessary tables
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS system_prompts (
                 user_id TEXT PRIMARY KEY,
                 prompt TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
-        """)
+        """
+        )
         conn.commit()
 
         # Define a simpler set_user_prompt for testing
@@ -199,8 +205,7 @@ class TestDatabaseFunctions(unittest.TestCase):
 
         # Define a simpler get_user_prompt for testing
         def test_get_user_prompt(user_id):
-            cursor.execute("SELECT prompt FROM system_prompts WHERE user_id = ?",
-                           (str(user_id), ))
+            cursor.execute("SELECT prompt FROM system_prompts WHERE user_id = ?", (str(user_id),))
             row = cursor.fetchone()
             # Use the patched DEFAULT_SYSTEM_PROMPT from config
             from src.bot import config
@@ -270,10 +275,10 @@ class TestOnMessageFunctionality(unittest.TestCase):
     @patch("src.bot.discord_aiavatar_complete.os.remove")
     @patch("src.bot.discord_aiavatar_complete.tempfile.NamedTemporaryFile")
     @patch("src.bot.discord_aiavatar_complete.discord.FFmpegPCMAudio")
-    @patch("src.bot.discord_aiavatar_complete.logger"
-           )  # Mock the logger instance used in the module
-    @patch("src.bot.discord_aiavatar_complete.aiavatar"
-           )  # Mock the global aiavatar instance
+    @patch(
+        "src.bot.discord_aiavatar_complete.logger"
+    )  # Mock the logger instance used in the module
+    @patch("src.bot.discord_aiavatar_complete.aiavatar")  # Mock the global aiavatar instance
     @patch("src.bot.discord_aiavatar_complete.DB_NAME", ":memory:")
     def setUp(
         self,
@@ -317,16 +322,17 @@ class TestOnMessageFunctionality(unittest.TestCase):
         # so self.mock_global_aiavatar_instance will be used by the bot's methods.
 
         # Setup mock methods for the global aiavatar instance
-        self.mock_global_aiavatar_instance.llm.chat = AsyncMock(
-            return_value="Test AI response")
+        self.mock_global_aiavatar_instance.llm.chat = AsyncMock(return_value="Test AI response")
         self.mock_global_aiavatar_instance.tts.speak = AsyncMock(
-            return_value=b"test_tts_audio_data")
+            return_value=b"test_tts_audio_data"
+        )
 
         # Setup for tempfile.NamedTemporaryFile
         self.mock_temp_file_object = MagicMock()
         self.mock_temp_file_object.name = "dummy_temp_file.wav"
-        self.mock_temp_file_object.__enter__.return_value = (self.mock_temp_file_object
-                                                             )  # For context manager
+        self.mock_temp_file_object.__enter__.return_value = (
+            self.mock_temp_file_object
+        )  # For context manager
         self.mock_temp_file_constructor.return_value = self.mock_temp_file_object
 
         # Initialize the in-memory database for this test suite
@@ -364,10 +370,7 @@ class TestOnMessageFunctionality(unittest.TestCase):
 
         return mock_message
 
-    def create_mock_voice_client(self,
-                                 guild_id=789,
-                                 is_connected=True,
-                                 is_playing_val=False):
+    def create_mock_voice_client(self, guild_id=789, is_connected=True, is_playing_val=False):
         mock_vc = MagicMock(spec=discord.VoiceClient)
         mock_vc.guild = MagicMock(spec=discord.Guild)
         mock_vc.guild.id = guild_id
@@ -380,11 +383,11 @@ class TestOnMessageFunctionality(unittest.TestCase):
         return mock_vc
 
     # 1. Message from Bot
-    @patch("src.bot.discord_aiavatar_complete.DB_NAME",
-           ":memory:")  # ensure DB is patched for module level if test runs standalone
+    @patch(
+        "src.bot.discord_aiavatar_complete.DB_NAME", ":memory:"
+    )  # ensure DB is patched for module level if test runs standalone
     async def test_on_message_ignores_bot_author(
-        self,
-        mock_db_name_override=None
+        self, mock_db_name_override=None
     ):  # mock_db_name_override to consume the patch if method is run standalone
         mock_message = await self.create_mock_message("Hello", author_is_bot=True)
         await self.bot.on_message(mock_message)
@@ -406,13 +409,15 @@ class TestOnMessageFunctionality(unittest.TestCase):
         mock_message = await self.create_mock_message("Hello in DM", guild_name=None)
         await self.bot.on_message(mock_message)
         self.mock_global_aiavatar_instance.llm.chat.assert_not_called()
-        # DMs don't have message.channel.send in the same way for this context, but good to check no interaction
-        # self.mock_logger_instance.debug.assert_any_call("Message not in a guild (e.g., DM), ignoring for voice-related processing.")
+        # DMs don't have message.channel.send in the same way for this context,
+        # but good to check no interaction
+        # self.mock_logger_instance.debug.assert_any_call(
+        #     "Message not in a guild (e.g., DM), ignoring for voice-related processing."
+        # )
 
     # 4. Bot Not in Voice Channel
     @patch("src.bot.discord_aiavatar_complete.DB_NAME", ":memory:")
-    async def test_on_message_bot_not_in_voice_channel(self,
-                                                       mock_db_name_override=None):
+    async def test_on_message_bot_not_in_voice_channel(self, mock_db_name_override=None):
         self.bot.voice_clients = []  # Ensure bot has no active voice clients
         mock_message = await self.create_mock_message("Hello when bot not in VC")
 
@@ -420,20 +425,24 @@ class TestOnMessageFunctionality(unittest.TestCase):
 
         self.mock_global_aiavatar_instance.llm.chat.assert_not_called()
         mock_message.channel.send.assert_not_called()
-        # self.mock_logger_instance.debug.assert_any_call(f"Bot not in a voice channel in guild '{mock_message.guild.name}' or message not applicable. Ignoring.")
+        # self.mock_logger_instance.debug.assert_any_call(
+        #     f"Bot not in a voice channel in guild '{mock_message.guild.name}' "
+        #     "or message not applicable. Ignoring."
+        # )
 
     # 5. Successful Text-to-Voice Interaction
-    @patch("src.bot.discord_aiavatar_complete.save_message"
-           )  # Mock save_message to check calls
+    @patch("src.bot.discord_aiavatar_complete.save_message")  # Mock save_message to check calls
     @patch("src.bot.discord_aiavatar_complete.DB_NAME", ":memory:")
-    async def test_on_message_successful_text_to_voice(self, mock_db_name_override,
-                                                       mock_save_message):
+    async def test_on_message_successful_text_to_voice(
+        self, mock_db_name_override, mock_save_message
+    ):
         mock_vc = self.create_mock_voice_client(guild_id=789)
         self.bot.voice_clients = [mock_vc]  # Bot is in this VC
 
         mock_channel_send = AsyncMock()
         mock_message = await self.create_mock_message(
-            "Test query", channel_send_mock=mock_channel_send, author_id=999)
+            "Test query", channel_send_mock=mock_channel_send, author_id=999
+        )
 
         # Setup AI and TTS responses
         self.mock_global_aiavatar_instance.llm.chat.return_value = "Mocked AI response"
@@ -452,12 +461,10 @@ class TestOnMessageFunctionality(unittest.TestCase):
         mock_channel_send.assert_called_once_with("Mocked AI response")
 
         # Check TTS call
-        self.mock_global_aiavatar_instance.tts.speak.assert_called_once_with(
-            "Mocked AI response")
+        self.mock_global_aiavatar_instance.tts.speak.assert_called_once_with("Mocked AI response")
 
         # Check tempfile usage
-        self.mock_temp_file_constructor.assert_called_once_with(suffix=".wav",
-                                                                delete=False)
+        self.mock_temp_file_constructor.assert_called_once_with(suffix=".wav", delete=False)
         self.mock_temp_file_object.write.assert_called_once_with(b"mock_audio_data")
 
         # Check voice_client.play
@@ -481,21 +488,20 @@ class TestOnMessageFunctionality(unittest.TestCase):
             author_id=998,
         )
 
-        self.mock_global_aiavatar_instance.llm.chat.side_effect = Exception(
-            "LLM processing failed")
+        self.mock_global_aiavatar_instance.llm.chat.side_effect = Exception("LLM processing failed")
 
         await self.bot.on_message(mock_message)
 
         self.mock_global_aiavatar_instance.llm.chat.assert_called_once()
         # User message should still be saved
-        mock_save_message.assert_called_once_with(998, "user",
-                                                  "Query causing LLM error")
+        mock_save_message.assert_called_once_with(998, "user", "Query causing LLM error")
 
         mock_channel_send.assert_not_called()
         self.mock_global_aiavatar_instance.tts.speak.assert_not_called()
         mock_vc.play.assert_not_called()
         self.mock_logger_instance.error.assert_any_call(
-            f"Error during AI processing for {mock_message.author.name} (ID: {mock_message.author.id}): LLM processing failed"
+            f"Error during AI processing for {mock_message.author.name} "
+            f"(ID: {mock_message.author.id}): LLM processing failed"
         )
 
     # 7. TTS Error
@@ -512,9 +518,9 @@ class TestOnMessageFunctionality(unittest.TestCase):
         )
 
         self.mock_global_aiavatar_instance.llm.chat.return_value = (
-            "Successful LLM response for TTS test")
-        self.mock_global_aiavatar_instance.tts.speak.side_effect = Exception(
-            "TTS failed")
+            "Successful LLM response for TTS test"
+        )
+        self.mock_global_aiavatar_instance.tts.speak.side_effect = Exception("TTS failed")
 
         await self.bot.on_message(mock_message)
 
@@ -522,7 +528,8 @@ class TestOnMessageFunctionality(unittest.TestCase):
         # User and assistant messages saved
         self.assertEqual(mock_save_message.call_count, 2)
         mock_channel_send.assert_called_once_with(
-            "Successful LLM response for TTS test")  # Text response still sent
+            "Successful LLM response for TTS test"
+        )  # Text response still sent
         self.mock_global_aiavatar_instance.tts.speak.assert_called_once()
         mock_vc.play.assert_not_called()
         self.mock_logger_instance.error.assert_any_call(
@@ -535,13 +542,13 @@ class TestOnMessageFunctionality(unittest.TestCase):
     # 8. Message Send Error
     @patch("src.bot.discord_aiavatar_complete.save_message")
     @patch("src.bot.discord_aiavatar_complete.DB_NAME", ":memory:")
-    async def test_on_message_channel_send_error(self, mock_db_name_override,
-                                                 mock_save_message):
+    async def test_on_message_channel_send_error(self, mock_db_name_override, mock_save_message):
         mock_vc = self.create_mock_voice_client(guild_id=789)
         self.bot.voice_clients = [mock_vc]
 
         mock_channel_send_that_fails = AsyncMock(
-            side_effect=discord.DiscordException("Failed to send message"))
+            side_effect=discord.DiscordException("Failed to send message")
+        )
         mock_message = await self.create_mock_message(
             "Query leading to send error",
             channel_send_mock=mock_channel_send_that_fails,
@@ -549,24 +556,24 @@ class TestOnMessageFunctionality(unittest.TestCase):
         )
 
         self.mock_global_aiavatar_instance.llm.chat.return_value = (
-            "LLM response for send error test")
-        self.mock_global_aiavatar_instance.tts.speak.return_value = (
-            b"tts_data_for_send_error_test")
+            "LLM response for send error test"
+        )
+        self.mock_global_aiavatar_instance.tts.speak.return_value = b"tts_data_for_send_error_test"
 
         await self.bot.on_message(mock_message)
 
         self.mock_global_aiavatar_instance.llm.chat.assert_called_once()
-        self.assertEqual(mock_save_message.call_count,
-                         2)  # User and assistant messages saved
-        mock_channel_send_that_fails.assert_called_once_with(
-            "LLM response for send error test")
+        self.assertEqual(mock_save_message.call_count, 2)  # User and assistant messages saved
+        mock_channel_send_that_fails.assert_called_once_with("LLM response for send error test")
         self.mock_logger_instance.error.assert_any_call(
-            f"Failed to send AI response to channel {mock_message.channel.name} for {mock_message.author.name}: Failed to send message"
+            f"Failed to send AI response to channel {mock_message.channel.name} "
+            f"for {mock_message.author.name}: Failed to send message"
         )
 
         # TTS should still be attempted as per current logic
         self.mock_global_aiavatar_instance.tts.speak.assert_called_once_with(
-            "LLM response for send error test")
+            "LLM response for send error test"
+        )
         mock_vc.play.assert_called_once()  # And playback
         self.mock_os_remove_func.assert_called_with("dummy_temp_file.wav")
 
@@ -579,11 +586,10 @@ if __name__ == "__main__":
             # Deeper patches for discord client/tree may not be needed if bot instance is AIAvatarBot directly
             # and not relying on discord.Client global/class patches for its own init.
             # The key is that AIAvatarBot itself and its methods are what we test.
-            with patch("logging.getLogger",
-                       return_value=MagicMock()):  # General logging
-                with patch("discord.Client",
-                           MagicMock()):  # If AIAvatarBot's super uses it
+            with patch("logging.getLogger", return_value=MagicMock()):  # General logging
+                with patch("discord.Client", MagicMock()):  # If AIAvatarBot's super uses it
                     with patch("discord.app_commands.CommandTree", MagicMock()):
-                        with patch("src.bot.services.ai_service.AIAvatar",
-                                   MagicMock()):  # If this is a different AIAvatar
+                        with patch(
+                            "src.bot.services.ai_service.AIAvatar", MagicMock()
+                        ):  # If this is a different AIAvatar
                             unittest.main()

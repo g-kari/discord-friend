@@ -65,7 +65,8 @@ class TestDefaultSystemPrompt(unittest.TestCase):
 
             # Verify that the database was queried with the right parameters
             mock_cursor.execute.assert_called_once_with(
-                "SELECT prompt FROM system_prompts WHERE user_id = ?", (test_user_id, ))
+                "SELECT prompt FROM system_prompts WHERE user_id = ?", (test_user_id,)
+            )
 
 
 if __name__ == "__main__":

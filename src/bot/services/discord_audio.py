@@ -61,7 +61,9 @@ class DiscordAudioSink(discord.AudioSink):  # type: ignore
                 # 古いデータを削除して新しいデータを追加
                 self.user_audio[user.id] = self.user_audio[user.id][1:] + [data]
                 if len(self.user_audio[user.id]) % 100 == 0:  # ログが多すぎないよう制限
-                    logger.debug(f"ユーザー「{user.name}」の音声バッファが上限に達したため、古いデータを削除しました")
+                    logger.debug(
+                        f"ユーザー「{user.name}」の音声バッファが上限に達したため、古いデータを削除しました"
+                    )
             else:
                 self.user_audio[user.id].append(data)
 
@@ -174,7 +176,8 @@ def save_discord_audio(audio_data, filename=None, samplerate=48000):
         # ファイルが適切にサイズを持っているか確認
         file_size = os.path.getsize(filename)
         logger.info(
-            f"Discord音声を保存: {filename}, サイズ: {file_size} バイト, サンプル数: {len(float_data)}")
+            f"Discord音声を保存: {filename}, サイズ: {file_size} バイト, サンプル数: {len(float_data)}"
+        )
 
         if file_size > 0:
             return filename

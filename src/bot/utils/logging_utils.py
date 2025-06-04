@@ -54,9 +54,7 @@ def setup_logger(
             # ファイルハンドラ（ローテーション機能付き）
             log_file = log_dir / f"{name}.log"
             file_handler = RotatingFileHandler(
-                log_file,
-                maxBytes=5 * 1024 * 1024,
-                backupCount=5  # 5MB
+                log_file, maxBytes=5 * 1024 * 1024, backupCount=5  # 5MB
             )
             file_handler.setLevel(file_level)
             file_format = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
