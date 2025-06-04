@@ -1,54 +1,54 @@
 """
-Manual test for DEFAULT_SYSTEM_PROMPT functionality
+DEFAULT_SYSTEM_PROMPT 機能の手動テスト
 """
 
 import os
 import sys
 
-# Check if os.getenv works as expected
+# os.getenv が期待通りに動作するかチェック
 test_env_var = "TEST_ENV_VAR"
 test_value = "test_value"
 os.environ[test_env_var] = test_value
 assert os.getenv(test_env_var) == test_value
 print(f"✓ os.getenv works correctly: {test_env_var} = {test_value}")
 
-# Set DEFAULT_SYSTEM_PROMPT environment variable
+# DEFAULT_SYSTEM_PROMPT 環境変数を設定
 default_prompt = "This is a test default system prompt"
 os.environ["DEFAULT_SYSTEM_PROMPT"] = default_prompt
 
-# Add current directory to path
+# カレントディレクトリをパスに追加
 sys.path.insert(0, ".")
 
 try:
-    # Import config module directly
+    # config モジュールを直接インポート
     from src.bot.config import DEFAULT_SYSTEM_PROMPT
     
-    # Check if DEFAULT_SYSTEM_PROMPT has the value from environment variable
+    # DEFAULT_SYSTEM_PROMPT が環境変数の値を持っているかチェック
     assert DEFAULT_SYSTEM_PROMPT == default_prompt
     print(f"✓ config.DEFAULT_SYSTEM_PROMPT is correctly set from environment variable: {DEFAULT_SYSTEM_PROMPT}")
 
 except ImportError as e:
     print(f"✗ Import error: {e}")
-    # Ignore import errors, just checking if the code works
+    # インポートエラーは無視、コードが動作するかチェックするだけ
 
-# Test with simulated database module
+# シミュレートされたデータベースモジュールでテスト
 class MockConfig:
     DEFAULT_SYSTEM_PROMPT = "Mocked default prompt"
 
 def get_user_prompt(user_id, config_module):
-    # Simulate database lookup that returns None
+    # None を返すデータベース検索をシミュレート
     user_prompt = None
-    # Return default system prompt from config if user has no custom prompt
+    # ユーザーがカスタムプロンプトを持たない場合、config からデフォルトシステムプロンプトを返す
     result = user_prompt if user_prompt else config_module.DEFAULT_SYSTEM_PROMPT
     return result
 
-# Test with our mock config
+# モック config でテスト
 mock_config = MockConfig()
 test_user_id = "test_user"
 result = get_user_prompt(test_user_id, mock_config)
 
-# Verify result
+# 結果を確認
 assert result == mock_config.DEFAULT_SYSTEM_PROMPT
 print(f"✓ get_user_prompt correctly uses DEFAULT_SYSTEM_PROMPT from config: {result}")
 
-print("\nAll tests passed successfully!")
+print("\nすべてのテストが正常に完了しました！")

@@ -17,13 +17,13 @@ from src.bot import config  # noqa: E402
 # キャッシュ用：最後に認識したテキスト
 last_transcribed = {}
 
-# Set up logging
+# ロギングを設定
 logger = logging.getLogger(__name__)
 
-# Create a mock AIAvatar instance or import the real one for testing
+# テスト用にモック AIAvatar インスタンスを作成するか、実際のものをインポート
 aiavatar = None
 if "pytest" in sys.modules:
-    # In test environment, don't import AIAvatar
+    # テスト環境では AIAvatar をインポートしない
     logger.warning("Running in test environment, using mock AIAvatar")
 else:
     try:

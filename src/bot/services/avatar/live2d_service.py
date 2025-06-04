@@ -14,18 +14,18 @@ import os
 import discord
 from PIL import Image, ImageDraw, ImageFont
 
-# Set up logging
+# ロギングを設定
 logger = logging.getLogger("aiavatar_bot")
 
-# Define avatar states
+# アバターの状態を定義
 AVATAR_STATE_IDLE = "idle"
 AVATAR_STATE_TALKING = "talking"
 AVATAR_STATE_THINKING = "thinking"
 
-# Default avatar settings
+# デフォルトアバター設定
 DEFAULT_AVATAR_SIZE = (480, 480)
-DEFAULT_AVATAR_BG_COLOR = (240, 248, 255)  # Light blue background
-DEFAULT_AVATAR_TEXT_COLOR = (0, 0, 0)  # Black text
+DEFAULT_AVATAR_BG_COLOR = (240, 248, 255)  # 薄い青の背景
+DEFAULT_AVATAR_TEXT_COLOR = (0, 0, 0)  # 黒いテキスト
 
 
 class Live2DAvatar:

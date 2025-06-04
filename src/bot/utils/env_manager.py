@@ -9,10 +9,10 @@ import logging
 import os
 from typing import Any, List, Optional
 
-# Set up logger
+# ロガーを設定
 logger = logging.getLogger("env_manager")
 
-# Import platform-specific file locking mechanism
+# プラットフォーム固有のファイルロック機構をインポート
 try:
     import fcntl  # Unix-based systems
 
@@ -57,7 +57,7 @@ except ImportError:
         LOCK_AVAILABLE = True
 
     except ImportError:
-        # Fallback if no locking mechanism is available
+        # ロック機構が使用できない場合のフォールバック
         logger.warning(
             "File locking not available on this system. Race conditions may occur."
         )
@@ -115,14 +115,14 @@ def read_env_file(env_file: str) -> List[str]:
 
     try:
         with open(env_file, "r", encoding="utf-8") as f:
-            # Lock the file for reading
+            # 読み取り用にファイルをロック
             try:
                 lock_file(f)
                 lines = f.readlines()
                 logger.debug(f"Successfully read {len(lines)} lines from .env file")
                 return lines
             finally:
-                # Always unlock the file
+                # 常にファイルのロックを解除
                 try:
                     unlock_file(f)
                 except Exception as e:
@@ -155,7 +155,7 @@ def write_env_file(env_file: str, lines: List[str]) -> bool:
                 logger.error(f"Error during file write: {e}")
                 return False
             finally:
-                # Always unlock the file
+                # 常にファイルのロックを解除
                 try:
                     unlock_file(f)
                 except Exception as e:
