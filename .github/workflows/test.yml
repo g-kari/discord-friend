@@ -31,7 +31,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest pytest-cov pytest-mock
         # Install core dependencies to avoid conflicts
-        pip install discord.py[voice]==2.3.2 numpy~=1.26.0 soundfile==0.12.1 python-dotenv==1.0.0 sqlalchemy==2.0.23 pydantic httpx aiofiles
+        pip install discord.py[voice]==2.3.2 numpy>=2.2.3 soundfile==0.12.1 python-dotenv==1.0.0 sqlalchemy==2.0.23 pydantic httpx aiofiles
         # Don't try to install sounddevice since it requires portaudio
         # Don't try to install aiavatar since it has conflicting dependencies
     - name: Create .env file
