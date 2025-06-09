@@ -31,10 +31,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 dependencies = [
-    "aiavatar==0.7.2",
+    "aiavatar==0.7.5",
     "discord.py[voice]==2.3.2",
     "sounddevice==0.4.6",
-    "numpy~=1.26.0",
+    "numpy>=2.2.3",
     "soundfile==0.12.1",
     "python-dotenv==1.0.0",
     "sqlalchemy==2.0.23",

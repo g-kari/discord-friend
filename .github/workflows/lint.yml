@@ -30,9 +30,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install black flake8 isort mypy
           # Install dependencies individually to avoid conflicts
-          pip install discord.py[voice]==2.3.2 sounddevice==0.4.6 numpy~=1.26.0 soundfile==0.12.1 python-dotenv==1.0.0 sqlalchemy==2.0.23 pydantic httpx aiofiles
+          pip install discord.py[voice]==2.3.2 sounddevice==0.4.6 numpy>=2.2.3 soundfile==0.12.1 python-dotenv==1.0.0 sqlalchemy==2.0.23 pydantic httpx aiofiles
           # Install aiavatar with --no-deps to avoid NumPy version conflict
-          pip install aiavatar==0.7.2 --no-deps
+          pip install aiavatar==0.7.5 --no-deps
       - name: Make lint script executable
         run: |
           chmod +x scripts/lint_and_fix.sh
