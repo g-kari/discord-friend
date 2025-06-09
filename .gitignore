@@ -237,3 +237,6 @@ rec/
 
 error_log.txt
 _site/
+
+# Prevent accidental shell redirection files
+=*
