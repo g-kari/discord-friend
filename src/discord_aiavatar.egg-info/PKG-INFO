@@ -1,0 +1,315 @@
+Metadata-Version: 2.4
+Name: discord-aiavatar
+Version: 1.0.0
+Summary: Discord bot with AI Avatar integration
+License: MIT
+Project-URL: Homepage, https://github.com/g-kari/discord-friends
+Project-URL: Bug Tracker, https://github.com/g-kari/discord-friends/issues
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: aiavatar==0.7.5
+Requires-Dist: discord.py[voice]==2.3.2
+Requires-Dist: sounddevice==0.4.6
+Requires-Dist: numpy>=2.2.3
+Requires-Dist: soundfile==0.12.1
+Requires-Dist: python-dotenv==1.0.0
+Requires-Dist: sqlalchemy==2.0.23
+Provides-Extra: dev
+Requires-Dist: black; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: isort; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+
+# AI会話ボイスボット（Dify × AIAvatarKit × AivisSpeech 構成）
+
+## 概要
+
+このプロジェクトは、Dify・AIAvatarKit・AivisSpeech を組み合わせて構築する、マルチモーダルなAI会話ボイスボットです。
+Discordやメタバース、Webアプリ等のプラットフォームで、音声認識（STT）、大規模言語モデル（LLM）、高品質な音声合成（TTS）を統合的に提供します。
+
+このボットを使用すると、Discord のボイスチャンネルで自然に会話するように AI と対話できます。ユーザーが話し始めると、ボットは音声を自動的に検出して録音し、その内容に基づいて応答します。また、カスタムプロンプトを設定することで、AI の性格や応答スタイルをカスタマイズすることも可能です。
+
+さらに、オプションの MCP（マルチチャンネルプレゼンス）機能を使用すると、ボットが起動時に指定されたサーバーとボイスチャンネルに自動的に参加するよう設定できます。
+
+---
+
+## システム構成
+
+- **Dify**  
+  オープンソースのLLMアプリ開発基盤。プロンプト管理・APIラッパー・ワークフロー設計・外部ツール連携が可能。
+
+  - [Dify公式](https://github.com/langgenius/dify)
+
+- **AIAvatarKit**  
+  モジュール型の会話AIフレームワーク。
+
+  - VAD（音声区間検出）、STT（Google/Azure/OpenAI）、LLM（ChatGPT/Gemini/Claude/Dify/LiteLLM）、TTS（VOICEVOX/AivisSpeech/他）を柔軟に組み合わせ可能
+  - WebSocket/HTTPでリアルタイム連携
+  - メタバースやIoTデバイスにも対応
+  - [AIAvatarKit公式](https://github.com/uezo/aiavatarkit)
+
+- **AivisSpeech**  
+  高品質な日本語TTSエンジン。AIAvatarKitのTTSバックエンドとして利用可能。
+  - [AivisSpeech公式](https://github.com/Aivis-Project/AivisSpeech)
+
+## アーキテクチャ
+
+このボットは以下の主な実行フローに従っています：
+
+1. **音声認識（Voice Recognition）**:
+   - ユーザーがボイスチャンネルで話す
+   - 音声がキャプチャされ処理される
+   - OpenAIを使用して音声がテキストに変換される
+   - テキストがAIサービスに送信される
+
+2. **AI応答（AI Response）**:
+   - AIサービスからの応答が処理される
+   - テキストがAivisSpeechを使用して音声に変換される
+   - 音声がボイスチャンネルで再生される
+
+3. **コマンド処理（Command Handling）**:
+   - ユーザーはDiscordのテキストコマンドやスラッシュコマンドでボットを制御できる
+   - コマンドは設定の管理、アクションのトリガー、情報の照会などを行う
+
+4. **自動参加機能（Auto-Join Feature）**:
+   - ボットは起動時に指定されたボイスチャンネルに自動的に参加できる
+   - `MCP_SERVERS` 環境変数を介して設定
+   - ボットが特定のチャンネルでアクティブである必要がある本番環境に役立つ
+
+---
+
+## 主な機能
+
+- **ボイスチャンネル常駐型**
+- **話し始めたユーザーを検知して自動録音**（無音検知で終了）
+- **キーワード検出**（特定キーワードを含む場合のみ応答）
+- **会話履歴の永続化**（SQLite）
+- **カスタムプロンプト**（ユーザー別にAIの応答スタイル設定）
+- **MCPサーバー自動接続機能**（指定したボイスチャンネルに自動参加）
+
+## MCPサーバー自動接続機能
+
+このボットには、起動時に特定のDiscordサーバーとボイスチャンネルに自動的に接続する機能があります。これは、MCPサーバー（マルチチャンネルプレゼンス）機能と呼ばれています。
+
+### 設定方法
+
+1. `.env` ファイルに `MCP_SERVERS` 環境変数を設定します：
+   ```
+   MCP_SERVERS={"サーバー名": ["ボイスチャンネル1", "ボイスチャンネル2"]}
+   ```
+
+2. 既存のボイスチャンネルを追加するには、以下のスラッシュコマンドを使用します：
+   - `/add_mcp_server` - 現在のボイスチャンネルをリストに追加
+   - `/add_mcp_server add_to_config:true` - 設定を.envファイルに永続的に保存
+
+### 利用可能なコマンド
+
+- `/list_mcp_servers` - 設定されているMCPサーバーとチャンネルのリストを表示
+- `/remove_mcp_server` - MCPサーバーリストからチャンネルを削除
+
+詳細な使用方法とテスト方法については、[MCP Server Auto-Join Feature - Testing Guide](src/bot/docs/mcp_servers_testing.md) を参照してください。
+
+---
+
+## クイックスタート
+
+### 開発環境のセットアップ
+
+#### オプション 1: Dev Containers を使用する方法（推奨）
+
+このプロジェクトは Dev Containers を使用して一貫した開発環境を提供します：
+
+1. [Visual Studio Code](https://code.visualstudio.com/) をインストール
+2. [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) 拡張機能をインストール
+3. リポジトリをクローンして VS Code で開く
+4. プロンプトが表示されたら「Reopen in Container」を選択するか、コマンドパレット (F1) を使用して「Remote-Containers: Reopen in Container」を選択
+
+#### オプション 2: uv を使用したローカル開発
+
+1. uvのインストール（高速パッケージマネージャー）
+   ```bash
+   # Unixシステム
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   
+   # Windows (PowerShell)
+   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+
+2. セットアップと仮想環境設定
+   ```bash
+   cd src/bot
+   
+   # 仮想環境を作成
+   uv venv
+   
+   # 仮想環境を有効化
+   # Unixの場合
+   source .venv/bin/activate
+   # Windowsの場合
+   .venv\Scripts\activate
+   
+   # 依存パッケージのインストール（uvで高速化）
+   uv pip install -r requirements.txt
+   ```
+
+### 環境変数の設定
+
+```bash
+cd src/bot
+cp aiavatar_env.example .env
+# .envファイルを編集して必要なAPIキーなどを設定
+```
+
+#### 必須環境変数
+
+- `DISCORD_BOT_TOKEN`: Discord bot トークン
+- `DIFY_API_KEY`: Dify API キー
+- `DIFY_API_URL`: Dify API の URL
+- `OPENAI_API_KEY`: 音声認識に使用する OpenAI API キー
+- `AIVISSPEECH_API_URL`: AivisSpeech API の URL (デフォルト: http://localhost:50021)
+
+#### オプション環境変数
+
+- `MCP_SERVERS`: 起動時に自動接続するサーバーとボイスチャンネルの JSON 形式の設定
+  例: `{"サーバー名": ["ボイスチャンネル1", "ボイスチャンネル2"]}`
+
+### Botの起動
+
+```bash
+# 直接起動
+python src/bot/discord_aiavatar_complete.py
+
+# PM2での起動
+pm2 start ecosystem.config.js
+```
+
+---
+
+## コマンド一覧
+
+### テキストコマンド
+
+以下のコマンドはチャットチャンネルで `!` プレフィックスを使用して実行できます：
+
+- `!join` - ボイスチャンネルに参加
+- `!leave` - ボイスチャンネルから退出
+- `!set_prompt <プロンプト>` - AIのシステムプロンプトを設定
+- `!recording_on [キーワード]` - 録音をオンにし、オプションでキーワードを設定
+- `!recording_off` - 録音をオフにする（Botが反応しなくなる）
+- `!history_clear` - 会話履歴をクリア
+
+### スラッシュコマンド
+
+以下のコマンドはDiscordのスラッシュコマンド機能を使用して実行できます：
+
+- `/add_mcp_server` - 現在のボイスチャンネルをMCPサーバーリストに追加
+  - `add_to_config:true` - 設定を.envファイルに保存
+- `/list_mcp_servers` - 設定されているMCPサーバーとチャンネルの一覧を表示
+- `/remove_mcp_server` - MCPサーバーリストからチャンネルを削除
+  - `server_name:"Server Name" channel_name:"Channel Name"` - 特定のサーバーとチャンネルを指定して削除
+  - `remove_from_config:true` - 設定を.envファイルから削除
+
+---
+
+## ライセンス
+
+- Dify: Apache-2.0
+- AIAvatarKit: Apache-2.0
+- AivisSpeech: Apache-2.0
+
+---
+
+## 備考
+
+- 各OSSの詳細なセットアップ・API仕様は公式リポジトリのREADMEを参照してください。
+- AIAvatarKitはDifyやAivisSpeech以外のSTT/LLM/TTSサービスとも柔軟に連携できます。
+- メタバースやIoTデバイス、Webアプリ等への拡張も容易です。
+
+## トラブルシューティング
+
+### 自動接続機能が動作しない場合
+
+1. ボットのログでエラーメッセージを確認する
+2. `MCP_SERVERS` 環境変数のJSON形式が正しいことを確認する
+3. ボットが指定されたボイスチャンネルに参加する権限を持っていることを確認する
+4. サーバー名とチャンネル名が完全に一致していることを確認する（大文字小文字も区別）
+
+### 音声認識の問題
+
+- ボットが音声を認識しない場合は、`!recording_on` コマンドを使用して録音機能が有効になっていることを確認してください
+- 音声認識が不正確な場合は、静かな環境で明確に話すようにしてください
+
+### API接続の問題
+
+- APIキーが正しく設定されていることを確認してください
+- 各サービス（Dify、OpenAI、AivisSpeech）のステータスページでサービスが稼働していることを確認してください
+
+### その他の問題が発生した場合
+
+1. ボットを再起動する
+2. 依存関係を最新バージョンに更新する
+3. GitHub Issuesページで同様の問題が報告されていないか確認する
+
+## 開発者向け情報
+
+このプロジェクトの開発に参加したり、コードを理解したりするための詳細情報は、以下のドキュメントを参照してください：
+
+- [開発ガイド](DEVELOPMENT.md) - プロジェクト構造、キーコンポーネント、アーキテクチャの詳細情報
+- [貢献ガイド](CONTRIBUTING.md) - 開発環境のセットアップ、開発ワークフロー、コーディングスタイルの情報
+- [セキュリティガイドライン](SECURITY.md) - 機密情報の取り扱いと保護に関するガイドライン
+- [GitHub Pages ドキュメント](https://g-kari.github.io/discord-friend/) - 使い方やサーバーの立ち上げ方などの詳細なガイド
+
+### テスト
+
+新機能を追加したり、バグを修正したりする場合は、テストを作成することを推奨します。テストは以下のコマンドで実行できます：
+
+```bash
+cd src/bot
+pytest tests/test_*.py
+```
+
+MCP自動接続機能のテスト方法については、[MCP Server Auto-Join Feature - Testing Guide](src/bot/docs/mcp_servers_testing.md) を参照してください。
+
+## セキュリティ対策
+
+### 機密情報の保護
+
+本リポジトリにはAPIキーなどの機密情報が含まれないように注意してください。以下のツールを使用して機密情報の漏洩を防止できます：
+
+- **Git履歴の機密情報チェック**:
+  ```bash
+  python scripts/check_git_secrets.py
+  ```
+
+- **pre-commitフックの設定**:
+  ```bash
+  # pre-commitフックを.git/hooksディレクトリにリンク
+  ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
+  ```
+
+### 機密情報の管理
+
+1. **環境変数の使用**: 機密情報はソースコードではなく環境変数に保存する
+2. **.env ファイルの保護**: .env ファイルを .gitignore に追加して、リポジトリにコミットされないようにする
+3. **サンプル値の使用**: .env.example ファイルにはサンプル値のみを含める
+4. **定期的なローテーション**: 本番環境のAPIキーやトークンは定期的に更新する
+
+### 機密情報の保管場所
+
+1. **開発環境**: 各開発者のローカル環境の `.env` ファイル
+2. **本番環境**: 環境変数またはシークレット管理サービス
+3. **共有が必要な場合**: パスワードマネージャーやセキュアなチャットツールを使用
+
+詳細な使い方と機密情報の管理ベストプラクティスについては、[セキュリティスクリプトのREADME](scripts/README.md)を参照してください。
+
+---
+
+### 参考リンク
+
+- [Discord AI Voice Bot ドキュメント](https://g-kari.github.io/discord-friend/) - 詳細なドキュメントとガイド
+- [Dify公式GitHub](https://github.com/langgenius/dify)
+- [AIAvatarKit公式GitHub](https://github.com/uezo/aiavatarkit)
+- [AivisSpeech公式GitHub](https://github.com/Aivis-Project/AivisSpeech)
+- [OWASP - Secure Coding Practices](https://owasp.org/www-project-secure-coding-practices-quick-reference-guide/)
+- [Git の履歴からセンシティブデータを削除する方法](https://docs.github.com/ja/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)
