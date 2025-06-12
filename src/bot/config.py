@@ -5,7 +5,11 @@
 import json
 import os
 
-import dotenv
+try:
+    import dotenv
+except ImportError:
+    # Fallback for testing environment without python-dotenv
+    import src.bot.dotenv_mock as dotenv
 
 from src.bot.utils.logging_utils import setup_logger
 

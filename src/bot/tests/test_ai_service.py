@@ -6,13 +6,18 @@ import pytest
 
 # Assuming ai_service.py is in src.bot.services
 from src.bot.services.ai_service import (
+    analyze_emotion,
     check_keyword_match,
     create_cushion_task,
+    format_emotion_result,
     get_ai_response,
+    get_ai_response_legacy,
+    get_emotion_intensity,
     get_random_conversation_cushion,
     send_conversation_cushions,
     text_to_speech,
     transcribe_audio,
+    transcribe_audio_legacy,
 )
 
 
@@ -39,7 +44,11 @@ class TestAIService(unittest.TestCase):
 
         # Assert that transcribe was called with binary data
         mock_aiavatar.stt.transcribe.assert_called_once()
-        self.assertEqual(result, "Test transcription")
+        # Check the new return format with emotion analysis
+        self.assertIsInstance(result, dict)
+        self.assertIn('text', result)
+        self.assertIn('emotion', result)
+        self.assertEqual(result['text'], "Test transcription")
 
     @pytest.mark.asyncio
     @patch("src.bot.services.ai_service.aiavatar")
@@ -53,8 +62,11 @@ class TestAIService(unittest.TestCase):
         with patch("builtins.open", m):
             result = await transcribe_audio(dummy_audio_path)
 
-        # Verify the function returns empty string on error
-        self.assertEqual(result, "")
+        # Verify the function returns appropriate structure on error
+        self.assertIsInstance(result, dict)
+        self.assertIn('text', result)
+        self.assertIn('emotion', result)
+        self.assertEqual(result['text'], "")
 
     @pytest.mark.asyncio
     @patch("src.bot.services.ai_service.aiavatar")
@@ -79,7 +91,11 @@ class TestAIService(unittest.TestCase):
         mock_aiavatar.llm.chat.assert_called_once()
         mock_cancel_event.set.assert_called_once()
         mock_task.__await__.assert_called()
-        self.assertEqual(result, "AI response")
+        # Check the new return format with emotion analysis
+        self.assertIsInstance(result, dict)
+        self.assertIn('text', result)
+        self.assertIn('emotion', result)
+        self.assertEqual(result['text'], "AI response")
 
     @pytest.mark.asyncio
     @patch("src.bot.services.ai_service.aiavatar")
@@ -99,8 +115,11 @@ class TestAIService(unittest.TestCase):
 
         result = await get_ai_response(text, history, system_prompt, mock_channel)
 
-        # Verify the function returns an error message on exception
-        self.assertEqual(result, "すみません、応答の生成中にエラーが発生しました。")
+        # Verify the function returns appropriate structure on exception
+        self.assertIsInstance(result, dict)
+        self.assertIn('text', result)
+        self.assertIn('emotion', result)
+        self.assertEqual(result['text'], "すみません、応答の生成中にエラーが発生しました。")
         # Verify cushion task was cancelled
         mock_cancel_event.set.assert_called_once()
         mock_task.__await__.assert_called()
@@ -201,6 +220,34 @@ class TestAIService(unittest.TestCase):
         self.assertEqual(task, mock_task)
         self.assertEqual(cancel_event, mock_event_instance)
         mock_create_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("src.bot.services.ai_service.transcribe_audio")
+    async def test_transcribe_audio_legacy(self, mock_transcribe_audio):
+        """Test legacy transcribe_audio function"""
+        mock_transcribe_audio.return_value = {
+            'text': 'Test transcription',
+            'emotion': {'dominant_emotion': 'neutral', 'neutral': 1.0}
+        }
+        
+        result = await transcribe_audio_legacy("dummy_audio.wav")
+        
+        self.assertEqual(result, 'Test transcription')
+        mock_transcribe_audio.assert_called_once_with("dummy_audio.wav")
+
+    @pytest.mark.asyncio
+    @patch("src.bot.services.ai_service.get_ai_response")
+    async def test_get_ai_response_legacy(self, mock_get_ai_response):
+        """Test legacy get_ai_response function"""
+        mock_get_ai_response.return_value = {
+            'text': 'AI response',
+            'emotion': {'dominant_emotion': 'neutral', 'neutral': 1.0}
+        }
+        
+        result = await get_ai_response_legacy("Hello", [], "System prompt", None)
+        
+        self.assertEqual(result, 'AI response')
+        mock_get_ai_response.assert_called_once_with("Hello", [], "System prompt", None)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,26 @@
+Metadata-Version: 2.4
+Name: discord-aiavatar
+Version: 1.0.0
+Summary: Discord bot with AI Avatar integration
+License: MIT
+Project-URL: Homepage, https://github.com/g-kari/discord-friends
+Project-URL: Bug Tracker, https://github.com/g-kari/discord-friends/issues
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: aiavatar==0.7.5
+Requires-Dist: discord.py[voice]==2.3.2
+Requires-Dist: sounddevice==0.4.6
+Requires-Dist: numpy>=2.2.3
+Requires-Dist: soundfile==0.12.1
+Requires-Dist: python-dotenv==1.0.0
+Requires-Dist: sqlalchemy==2.0.23
+Provides-Extra: dev
+Requires-Dist: black; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: isort; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+
 # AI会話ボイスボット（Dify × AIAvatarKit × AivisSpeech 構成）
 
 ## 概要
@@ -64,7 +87,6 @@ Discordやメタバース、Webアプリ等のプラットフォームで、音�
 - **会話履歴の永続化**（SQLite）
 - **カスタムプロンプト**（ユーザー別にAIの応答スタイル設定）
 - **MCPサーバー自動接続機能**（指定したボイスチャンネルに自動参加）
-- **感情分析機能**（日本語テキストから感情値を検出・分析）
 
 ## MCPサーバー自動接続機能
 
