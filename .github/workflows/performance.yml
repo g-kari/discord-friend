@@ -1,0 +1,506 @@
+name: Performance Benchmarking & Regression Detection
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - '**.py'
+      - 'src/bot/requirements.txt'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - '**.py'
+      - 'src/bot/requirements.txt'
+  schedule:
+    # Run performance tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: write
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # Fetch current and previous commit for comparison
+        
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libportaudio2 libportaudio-dev time
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-benchmark pytest-mock pytest-asyncio
+        pip install psutil memory_profiler line_profiler
+        # Install core dependencies
+        pip install discord.py[voice]==2.3.2 numpy>=2.2.3 soundfile==0.12.1 python-dotenv==1.0.0 sqlalchemy==2.0.23 pydantic httpx aiofiles
+        pip install sounddevice==0.4.6
+        
+    - name: Create test environment
+      run: |
+        cp src/bot/aiavatar_env.example src/bot/.env
+        mkdir -p benchmarks/results
+        
+    - name: Module Import Performance Test
+      run: |
+        cd src/bot
+        python -c "
+import time
+import json
+import sys
+import tracemalloc
+
+def benchmark_imports():
+    '''Benchmark critical module imports'''
+    results = {}
+    
+    # Test config import
+    tracemalloc.start()
+    start_time = time.perf_counter()
+    import config
+    end_time = time.perf_counter()
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    
+    results['config_import'] = {
+        'time_seconds': end_time - start_time,
+        'memory_current_mb': current / 1024 / 1024,
+        'memory_peak_mb': peak / 1024 / 1024
+    }
+    
+    # Test agent system import
+    tracemalloc.start()
+    start_time = time.perf_counter()
+    from agents import BaseAgent, PresidentAgent, ManagerAgent, WorkerAgent
+    from services.agent_manager import AgentManager
+    end_time = time.perf_counter()
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    
+    results['agent_system_import'] = {
+        'time_seconds': end_time - start_time,
+        'memory_current_mb': current / 1024 / 1024,
+        'memory_peak_mb': peak / 1024 / 1024
+    }
+    
+    # Test audio service import
+    tracemalloc.start()
+    start_time = time.perf_counter()
+    from services.audio_service import record_with_silence_detection, cleanup_audio_files
+    end_time = time.perf_counter()
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    
+    results['audio_service_import'] = {
+        'time_seconds': end_time - start_time,
+        'memory_current_mb': current / 1024 / 1024,
+        'memory_peak_mb': peak / 1024 / 1024
+    }
+    
+    return results
+
+results = benchmark_imports()
+with open('../../benchmarks/results/import_benchmarks.json', 'w') as f:
+    json.dump(results, f, indent=2)
+
+print('Import Performance Results:')
+for module, metrics in results.items():
+    print(f'{module}: {metrics[\"time_seconds\"]:.3f}s, {metrics[\"memory_peak_mb\"]:.2f}MB peak')
+"
+
+    - name: Agent System Performance Test
+      run: |
+        cd src/bot
+        python -c "
+import time
+import json
+import asyncio
+import tracemalloc
+from services.agent_manager import AgentManager
+
+async def benchmark_agent_operations():
+    '''Benchmark agent system operations'''
+    results = {}
+    
+    # Test agent manager startup
+    tracemalloc.start()
+    start_time = time.perf_counter()
+    manager = AgentManager()
+    await manager.start()
+    end_time = time.perf_counter()
+    current, peak = tracemalloc.get_traced_memory()
+    
+    results['agent_manager_startup'] = {
+        'time_seconds': end_time - start_time,
+        'memory_current_mb': current / 1024 / 1024,
+        'memory_peak_mb': peak / 1024 / 1024
+    }
+    
+    # Test agent creation
+    start_time = time.perf_counter()
+    president = await manager.create_agent('president')
+    manager_agent = await manager.create_agent('manager', 'manager1')
+    worker = await manager.create_agent('worker_innovator', 'worker1')
+    end_time = time.perf_counter()
+    current, peak = tracemalloc.get_traced_memory()
+    
+    results['agent_creation'] = {
+        'time_seconds': end_time - start_time,
+        'memory_current_mb': current / 1024 / 1024,
+        'memory_peak_mb': peak / 1024 / 1024,
+        'agents_created': 3
+    }
+    
+    # Test message routing
+    start_time = time.perf_counter()
+    await manager.send_message('president', 'manager1', 'Test performance message')
+    await asyncio.sleep(0.1)  # Allow message processing
+    end_time = time.perf_counter()
+    current, peak = tracemalloc.get_traced_memory()
+    
+    results['message_routing'] = {
+        'time_seconds': end_time - start_time,
+        'memory_current_mb': current / 1024 / 1024,
+        'memory_peak_mb': peak / 1024 / 1024
+    }
+    
+    # Clean shutdown
+    start_time = time.perf_counter()
+    await manager.stop()
+    end_time = time.perf_counter()
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    
+    results['agent_manager_shutdown'] = {
+        'time_seconds': end_time - start_time,
+        'memory_current_mb': current / 1024 / 1024,
+        'memory_peak_mb': peak / 1024 / 1024
+    }
+    
+    return results
+
+results = asyncio.run(benchmark_agent_operations())
+with open('../../benchmarks/results/agent_benchmarks.json', 'w') as f:
+    json.dump(results, f, indent=2)
+
+print('Agent System Performance Results:')
+for operation, metrics in results.items():
+    print(f'{operation}: {metrics[\"time_seconds\"]:.3f}s, {metrics[\"memory_peak_mb\"]:.2f}MB peak')
+"
+
+    - name: Database Performance Test
+      run: |
+        cd src/bot
+        python -c "
+import time
+import json
+import tracemalloc
+import tempfile
+import os
+from models.database import (
+    init_db, save_message, get_user_history, 
+    set_user_prompt, get_user_prompt, clear_user_history
+)
+
+def benchmark_database_operations():
+    '''Benchmark database operations'''
+    results = {}
+    
+    # Use temporary database for testing
+    original_db = os.environ.get('DB_PATH', 'aiavatar_bot.db')
+    temp_db = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+    temp_db.close()
+    
+    import config
+    config.DB_PATH = temp_db.name
+    
+    try:
+        # Test database initialization
+        tracemalloc.start()
+        start_time = time.perf_counter()
+        init_db()
+        end_time = time.perf_counter()
+        current, peak = tracemalloc.get_traced_memory()
+        
+        results['db_init'] = {
+            'time_seconds': end_time - start_time,
+            'memory_current_mb': current / 1024 / 1024,
+            'memory_peak_mb': peak / 1024 / 1024
+        }
+        
+        # Test message operations
+        test_user_id = 'benchmark_user_123'
+        
+        # Bulk message insert test
+        start_time = time.perf_counter()
+        for i in range(100):
+            save_message(test_user_id, 'user', f'Test message {i}')
+            save_message(test_user_id, 'assistant', f'Response {i}')
+        end_time = time.perf_counter()
+        current, peak = tracemalloc.get_traced_memory()
+        
+        results['bulk_message_insert'] = {
+            'time_seconds': end_time - start_time,
+            'memory_current_mb': current / 1024 / 1024,
+            'memory_peak_mb': peak / 1024 / 1024,
+            'messages_inserted': 200
+        }
+        
+        # Test message retrieval
+        start_time = time.perf_counter()
+        for i in range(50):
+            history = get_user_history(test_user_id, limit=20)
+        end_time = time.perf_counter()
+        current, peak = tracemalloc.get_traced_memory()
+        
+        results['message_retrieval'] = {
+            'time_seconds': end_time - start_time,
+            'memory_current_mb': current / 1024 / 1024,
+            'memory_peak_mb': peak / 1024 / 1024,
+            'queries_executed': 50
+        }
+        
+        # Test user prompt operations
+        start_time = time.perf_counter()
+        for i in range(50):
+            set_user_prompt(f'user_{i}', f'Custom prompt {i}')
+            prompt = get_user_prompt(f'user_{i}')
+        end_time = time.perf_counter()
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        
+        results['prompt_operations'] = {
+            'time_seconds': end_time - start_time,
+            'memory_current_mb': current / 1024 / 1024,
+            'memory_peak_mb': peak / 1024 / 1024,
+            'operations': 100
+        }
+        
+    finally:
+        # Clean up
+        os.unlink(temp_db.name)
+        config.DB_PATH = original_db
+    
+    return results
+
+results = benchmark_database_operations()
+with open('../../benchmarks/results/database_benchmarks.json', 'w') as f:
+    json.dump(results, f, indent=2)
+
+print('Database Performance Results:')
+for operation, metrics in results.items():
+    print(f'{operation}: {metrics[\"time_seconds\"]:.3f}s, {metrics[\"memory_peak_mb\"]:.2f}MB peak')
+"
+
+    - name: Generate Performance Summary
+      run: |
+        python -c "
+import json
+import os
+from datetime import datetime
+
+def load_benchmark_results():
+    results_dir = 'benchmarks/results'
+    all_results = {}
+    
+    for file in os.listdir(results_dir):
+        if file.endswith('_benchmarks.json'):
+            with open(os.path.join(results_dir, file), 'r') as f:
+                category = file.replace('_benchmarks.json', '')
+                all_results[category] = json.load(f)
+    
+    return all_results
+
+def generate_summary(results):
+    summary = {
+        'timestamp': datetime.now().isoformat(),
+        'commit_sha': os.environ.get('GITHUB_SHA', 'unknown'),
+        'ref': os.environ.get('GITHUB_REF', 'unknown'),
+        'summary': {}
+    }
+    
+    total_time = 0
+    total_memory_peak = 0
+    operation_count = 0
+    
+    for category, benchmarks in results.items():
+        category_time = sum(b.get('time_seconds', 0) for b in benchmarks.values())
+        category_memory = max(b.get('memory_peak_mb', 0) for b in benchmarks.values())
+        
+        summary['summary'][category] = {
+            'total_time_seconds': round(category_time, 3),
+            'peak_memory_mb': round(category_memory, 2),
+            'operations': len(benchmarks)
+        }
+        
+        total_time += category_time
+        total_memory_peak = max(total_memory_peak, category_memory)
+        operation_count += len(benchmarks)
+    
+    summary['overall'] = {
+        'total_time_seconds': round(total_time, 3),
+        'peak_memory_mb': round(total_memory_peak, 2),
+        'total_operations': operation_count
+    }
+    
+    summary['detailed_results'] = results
+    return summary
+
+# Generate summary
+results = load_benchmark_results()
+summary = generate_summary(results)
+
+with open('benchmarks/results/performance_summary.json', 'w') as f:
+    json.dump(summary, f, indent=2)
+
+# Print summary for CI logs
+print('\\n=== PERFORMANCE SUMMARY ===')
+print(f'Total execution time: {summary[\"overall\"][\"total_time_seconds\"]}s')
+print(f'Peak memory usage: {summary[\"overall\"][\"peak_memory_mb\"]}MB')
+print(f'Operations benchmarked: {summary[\"overall\"][\"total_operations\"]}')
+print()
+
+for category, metrics in summary['summary'].items():
+    print(f'{category.upper()}:')
+    print(f'  Time: {metrics[\"total_time_seconds\"]}s')
+    print(f'  Memory: {metrics[\"peak_memory_mb\"]}MB')
+    print(f'  Operations: {metrics[\"operations\"]}')
+"
+
+    - name: Check Performance Regression
+      run: |
+        python -c "
+import json
+import os
+import sys
+
+def check_regression():
+    '''Check for performance regressions'''
+    try:
+        with open('benchmarks/results/performance_summary.json', 'r') as f:
+            current = json.load(f)
+    except FileNotFoundError:
+        print('No current benchmark results found')
+        return
+    
+    # Define performance thresholds
+    thresholds = {
+        'total_time_seconds': 5.0,  # Max 5 seconds total
+        'peak_memory_mb': 100.0,    # Max 100MB peak memory
+        'import_time_warning': 1.0,  # Warn if imports take >1s
+        'agent_startup_warning': 2.0 # Warn if agent startup >2s
+    }
+    
+    overall = current.get('overall', {})
+    warnings = []
+    errors = []
+    
+    # Check overall performance
+    if overall.get('total_time_seconds', 0) > thresholds['total_time_seconds']:
+        errors.append(f'Total execution time ({overall[\"total_time_seconds\"]}s) exceeds threshold ({thresholds[\"total_time_seconds\"]}s)')
+    
+    if overall.get('peak_memory_mb', 0) > thresholds['peak_memory_mb']:
+        errors.append(f'Peak memory usage ({overall[\"peak_memory_mb\"]}MB) exceeds threshold ({thresholds[\"peak_memory_mb\"]}MB)')
+    
+    # Check specific operations
+    detailed = current.get('detailed_results', {})
+    
+    # Check import performance
+    import_results = detailed.get('import', {})
+    for module, metrics in import_results.items():
+        if metrics.get('time_seconds', 0) > thresholds['import_time_warning']:
+            warnings.append(f'Slow import detected: {module} took {metrics[\"time_seconds\"]}s')
+    
+    # Check agent startup performance
+    agent_results = detailed.get('agent', {})
+    startup_time = agent_results.get('agent_manager_startup', {}).get('time_seconds', 0)
+    if startup_time > thresholds['agent_startup_warning']:
+        warnings.append(f'Slow agent startup: {startup_time}s')
+    
+    # Report results
+    if errors:
+        print('\\n❌ PERFORMANCE REGRESSION DETECTED:')
+        for error in errors:
+            print(f'  ERROR: {error}')
+        sys.exit(1)
+    
+    if warnings:
+        print('\\n⚠️  PERFORMANCE WARNINGS:')
+        for warning in warnings:
+            print(f'  WARNING: {warning}')
+    
+    if not errors and not warnings:
+        print('\\n✅ All performance checks passed!')
+
+check_regression()
+"
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: performance-benchmarks-${{ github.sha }}
+        path: benchmarks/results/
+        retention-days: 90
+        
+    - name: Comment on PR with performance results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          try {
+            const summaryPath = 'benchmarks/results/performance_summary.json';
+            const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+            
+            const comment = `## 🚀 Performance Benchmark Results
+            
+            **Overall Performance:**
+            - Total execution time: ${summary.overall.total_time_seconds}s
+            - Peak memory usage: ${summary.overall.peak_memory_mb}MB
+            - Operations benchmarked: ${summary.overall.total_operations}
+            
+            **Category Breakdown:**
+            ${Object.entries(summary.summary).map(([category, metrics]) => 
+              `- **${category.toUpperCase()}**: ${metrics.total_time_seconds}s, ${metrics.peak_memory_mb}MB peak`
+            ).join('\\n')}
+            
+            <details>
+            <summary>📊 Detailed Results</summary>
+            
+            \`\`\`json
+            ${JSON.stringify(summary.detailed_results, null, 2)}
+            \`\`\`
+            </details>
+            
+            *Benchmark run on: ${summary.timestamp}*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          } catch (error) {
+            console.log('Could not post performance results:', error);
+          }

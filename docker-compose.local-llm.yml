@@ -1,0 +1,313 @@
+# Production-Ready Local LLM Infrastructure - Worker2 Implementation
+# Scalable, monitored, and robust local AI ecosystem
+
+version: '3.8'
+
+services:
+  # Ollama - Primary LLM Backend
+  ollama:
+    image: ollama/ollama:latest
+    container_name: discord-bot-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+      - ./config/ollama:/etc/ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_LOADED_MODELS=3
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - llm-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # vLLM - High-Performance Inference Engine
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: discord-bot-vllm
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - vllm_models:/models
+      - vllm_cache:/root/.cache
+    environment:
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+      - VLLM_ATTENTION_BACKEND=FLASHINFER
+      - CUDA_VISIBLE_DEVICES=0
+    command: >
+      --model microsoft/DialoGPT-medium
+      --host 0.0.0.0
+      --port 8000
+      --gpu-memory-utilization 0.8
+      --max-model-len 4096
+      --dtype auto
+      --api-key sk-local-vllm-key
+      --served-model-name japanese-llm
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - llm-network
+    depends_on:
+      - ollama
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # Redis - Caching and Session Management
+  redis:
+    image: redis:7-alpine
+    container_name: discord-bot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - llm-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # PostgreSQL - Robust Data Storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: discord-bot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: discord_bot
+      POSTGRES_USER: bot_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_123}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bot_user -d discord_bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - llm-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # Prometheus - Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: discord-bot-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/prometheus/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - llm-network
+    depends_on:
+      - ollama
+      - vllm
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Grafana - Metrics Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: discord-bot-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - llm-network
+    depends_on:
+      - prometheus
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Node Exporter - System Metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: discord-bot-node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - llm-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Nginx - Load Balancer and Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: discord-bot-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./config/nginx/conf.d:/etc/nginx/conf.d
+      - ./ssl:/etc/nginx/ssl
+      - nginx_logs:/var/log/nginx
+    networks:
+      - llm-network
+    depends_on:
+      - ollama
+      - vllm
+      - grafana
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # Log Aggregation with Fluent Bit
+  fluent-bit:
+    image: fluent/fluent-bit:latest
+    container_name: discord-bot-fluent-bit
+    restart: unless-stopped
+    ports:
+      - "24224:24224"
+    volumes:
+      - ./config/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - ./config/fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - llm-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Health Check Service
+  healthcheck:
+    build:
+      context: .
+      dockerfile: docker/healthcheck.Dockerfile
+    container_name: discord-bot-healthcheck
+    restart: unless-stopped
+    environment:
+      - CHECK_INTERVAL=30
+      - SERVICES=ollama:11434,vllm:8000,redis:6379,postgres:5432
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - llm-network
+    depends_on:
+      - ollama
+      - vllm
+      - redis
+      - postgres
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+networks:
+  llm-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  ollama_models:
+    driver: local
+  vllm_models:
+    driver: local
+  vllm_cache:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  nginx_logs:
+    driver: local

@@ -1,0 +1,53 @@
+name: Auto-fix Linting Issues
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - '**.py'
+  workflow_dispatch:
+
+jobs:
+  lint-fix:
+    name: Fix Linting Issues
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    # Skip this job for PRs, only run on direct pushes to main
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          # Full git history is needed to make commits
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black flake8 isort mypy
+          # Install dependencies individually to avoid conflicts
+          pip install discord.py[voice]==2.3.2 sounddevice==0.4.6 numpy>=2.2.3 soundfile==0.12.1 python-dotenv==1.0.0 sqlalchemy==2.0.23 pydantic httpx aiofiles
+          # Install aiavatar with --no-deps to avoid NumPy version conflict
+          pip install aiavatar==0.7.5 --no-deps
+      - name: Configure Git
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+      - name: Make lint script executable
+        run: |
+          chmod +x scripts/lint_and_fix.sh
+      - name: Run auto-fix linters
+        run: |
+          ./scripts/lint_and_fix.sh --dir=src/ --message="🤖 Auto-fix linting issues [skip ci]"
+      - name: Push changes
+        # Only push if there are changes to commit (git status returns non-empty)
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git push
+          else
+            echo "No changes to push"
+          fi

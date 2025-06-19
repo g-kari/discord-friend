@@ -1,0 +1,285 @@
+name: Comprehensive Quality Gates
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - '**.py'
+      - 'src/bot/requirements.txt'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - '**.py'
+      - 'src/bot/requirements.txt'
+      - '.github/workflows/test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  quality-gates:
+    name: Quality Gates & Testing
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test-suite: [core, audio, agents, integration]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libportaudio2 libportaudio-dev
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov pytest-mock pytest-asyncio pytest-xdist pytest-timeout
+        pip install coverage[toml] bandit safety mypy
+        # Install core dependencies
+        pip install discord.py[voice]==2.3.2 numpy>=2.2.3 soundfile==0.12.1 python-dotenv==1.0.0 sqlalchemy==2.0.23 pydantic httpx aiofiles
+        # Install sounddevice for audio tests
+        pip install sounddevice==0.4.6
+        
+    - name: Create test environment
+      run: |
+        cp src/bot/aiavatar_env.example src/bot/.env
+        mkdir -p test-reports
+        
+    - name: Security scan with bandit
+      if: matrix.test-suite == 'core'
+      run: |
+        bandit -r src/bot/ -f json -o test-reports/bandit-report.json || true
+        bandit -r src/bot/ --severity-level medium
+        
+    - name: Dependency security check
+      if: matrix.test-suite == 'core'
+      run: |
+        safety check --json --output test-reports/safety-report.json || true
+        safety check
+        
+    - name: Core tests with coverage
+      if: matrix.test-suite == 'core'
+      run: |
+        cd src/bot
+        python -m pytest tests/test_ai_service.py tests/test_config_default_prompt.py \
+          --cov=. --cov-report=xml:../../test-reports/coverage-core.xml \
+          --cov-report=html:../../test-reports/htmlcov-core \
+          --junit-xml=../../test-reports/junit-core.xml \
+          --timeout=30 -v
+          
+    - name: Audio processing tests
+      if: matrix.test-suite == 'audio'
+      run: |
+        cd src/bot
+        python -m pytest tests/test_audio_service.py \
+          --cov=services/audio_service.py --cov-report=xml:../../test-reports/coverage-audio.xml \
+          --junit-xml=../../test-reports/junit-audio.xml \
+          --timeout=60 -v
+          
+    - name: Agent system tests  
+      if: matrix.test-suite == 'agents'
+      run: |
+        cd src/bot
+        python -m pytest tests/test_agent_system.py \
+          --cov=agents/ --cov=services/agent_manager.py \
+          --cov-report=xml:../../test-reports/coverage-agents.xml \
+          --junit-xml=../../test-reports/junit-agents.xml \
+          --timeout=120 -v
+          
+    - name: Integration tests
+      if: matrix.test-suite == 'integration'
+      run: |
+        cd src/bot
+        python -m pytest tests/ --ignore=tests/test_audio_service.py \
+          --ignore=tests/test_agent_system.py --ignore=tests/test_ai_service.py \
+          --ignore=tests/test_config_default_prompt.py \
+          --cov=. --cov-report=xml:../../test-reports/coverage-integration.xml \
+          --junit-xml=../../test-reports/junit-integration.xml \
+          --timeout=180 -v
+          
+    - name: Type checking with mypy
+      if: matrix.test-suite == 'core'
+      run: |
+        cd src/bot
+        mypy --config-file ../../pyproject.toml . || true
+        
+    - name: Generate performance report
+      if: matrix.test-suite == 'integration'
+      run: |
+        cd src/bot
+        python -c "
+import time
+import psutil
+import json
+import subprocess
+
+# Get system info
+system_info = {
+    'python_version': subprocess.check_output(['python', '--version']).decode().strip(),
+    'cpu_count': psutil.cpu_count(),
+    'memory_total': psutil.virtual_memory().total,
+    'platform': subprocess.check_output(['uname', '-a']).decode().strip()
+}
+
+# Run a simple performance test
+start_time = time.time()
+# Import key modules to measure load time
+try:
+    import agents
+    import services.agent_manager
+    import models.database
+    load_time = time.time() - start_time
+    
+    perf_report = {
+        'system_info': system_info,
+        'module_load_time': load_time,
+        'timestamp': time.time()
+    }
+    
+    with open('../../test-reports/performance-report.json', 'w') as f:
+        json.dump(perf_report, f, indent=2)
+        
+    print(f'Module load time: {load_time:.3f}s')
+except Exception as e:
+    print(f'Performance test failed: {e}')
+"
+        
+    - name: Upload test reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-reports-${{ matrix.test-suite }}
+        path: test-reports/
+        retention-days: 30
+        
+    - name: Upload coverage to Codecov
+      if: matrix.test-suite == 'core'
+      uses: codecov/codecov-action@v4
+      with:
+        file: test-reports/coverage-core.xml
+        flags: core-tests
+        name: codecov-core
+        fail_ci_if_error: false
+
+  test-legacy:
+    name: Legacy Test Support  
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov pytest-mock
+        # Install core dependencies to avoid conflicts
+        pip install discord.py[voice]==2.3.2 numpy>=2.2.3 soundfile==0.12.1 python-dotenv==1.0.0 sqlalchemy==2.0.23 pydantic httpx aiofiles
+        # Don't try to install sounddevice since it requires portaudio
+        # Don't try to install aiavatar since it has conflicting dependencies
+    - name: Create .env file
+      run: |
+        cp src/bot/aiavatar_env.example src/bot/.env
+    - name: Test AI Service
+      run: |
+        python -m pytest src/bot/tests/test_ai_service.py -v
+    - name: Test env_manager with minimal test file
+      run: |
+        # Create a simple test file for env_manager to avoid complex imports
+        cat > /tmp/test_env_manager.py << 'EOF'
+        import unittest
+        import tempfile
+        import os
+        import sys
+        
+        # Add the src directory to the Python path
+        sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+        
+        from src.bot.utils import env_manager
+        
+        class TestEnvManager(unittest.TestCase):
+            def setUp(self):
+                # Create a temporary .env file for testing
+                self.temp_dir = tempfile.TemporaryDirectory()
+                self.env_file = os.path.join(self.temp_dir.name, '.env')
+                with open(self.env_file, 'w') as f:
+                    f.write('TEST_KEY=test_value\n')
+                    f.write('ANOTHER_KEY=another_value\n')
+            
+            def tearDown(self):
+                # Remove the temporary directory and its contents
+                self.temp_dir.cleanup()
+            
+            def test_find_env_file(self):
+                # Setup a search path to our test .env file
+                search_paths = [self.env_file]
+                result = env_manager.find_env_file(search_paths)
+                self.assertEqual(result, self.env_file)
+            
+            def test_find_env_file_not_found(self):
+                # Test with a non-existent path
+                result = env_manager.find_env_file(['/non/existent/path/.env'])
+                self.assertIsNone(result)
+            
+            def test_read_env_file(self):
+                lines = env_manager.read_env_file(self.env_file)
+                self.assertEqual(len(lines), 2)
+                self.assertEqual(lines[0], 'TEST_KEY=test_value\n')
+                self.assertEqual(lines[1], 'ANOTHER_KEY=another_value\n')
+            
+            def test_update_env_variable(self):
+                # Update an existing variable
+                result = env_manager.update_env_variable('TEST_KEY', 'new_value', self.env_file)
+                self.assertTrue(result)
+                
+                # Check if the file was updated
+                with open(self.env_file, 'r') as f:
+                    content = f.read()
+                
+                self.assertIn('TEST_KEY=new_value', content)
+                self.assertIn('ANOTHER_KEY=another_value', content)
+            
+            def test_update_env_variable_not_found(self):
+                # Try to update a non-existent variable
+                result = env_manager.update_env_variable('NEW_KEY', 'new_value', self.env_file)
+                self.assertTrue(result)
+                
+                # Check if the file was updated with the new variable
+                with open(self.env_file, 'r') as f:
+                    content = f.read()
+                
+                self.assertIn('NEW_KEY=new_value', content)
+            
+            def test_json_encode(self):
+                # Test JSON encoding for dictionary values
+                test_dict = {'key1': 'value1', 'key2': ['item1', 'item2']}
+                result = env_manager.update_env_variable('JSON_KEY', test_dict, self.env_file, json_encode=True)
+                self.assertTrue(result)
+                
+                # Check if the file was updated with JSON encoded value
+                with open(self.env_file, 'r') as f:
+                    content = f.read()
+                
+                self.assertIn('JSON_KEY={"key1": "value1", "key2": ["item1", "item2"]}', content)
+        
+        if __name__ == '__main__':
+            unittest.main()
+        EOF
+        
+        # Run the test
+        python -m pytest /tmp/test_env_manager.py -v

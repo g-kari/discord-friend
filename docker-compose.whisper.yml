@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  whisper:
+    image: ghcr.io/mutablelogic/go-whisper:latest-cuda
+    container_name: whisper-server
+    restart: unless-stopped
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    volumes:
+      - whisper_data:/data
+    ports:
+      - "8080:80"
+    environment:
+      - WHISPER_MODEL=small # Default model (can be tiny, base, small, medium, large)
+      - WHISPER_LANGUAGE=ja # Default to Japanese
+      - WHISPER_THREADS=4 # Number of threads to use
+    command:
+      [
+        "server",
+        "--model",
+        "/data/models/ggml-small-q5_1.bin", # Japanese model
+        "--language",
+        "ja",
+        "--threads",
+        "4"
+      ]
+    networks:
+      - discord-bot-network
+  # Alternative CPU-only version (comment out the above and uncomment below if no GPU)
+  # whisper-cpu:
+  #   image: ghcr.io/mutablelogic/go-whisper:latest
+  #   container_name: whisper-server
+  #   restart: unless-stopped
+  #   volumes:
+  #     - whisper_data:/data
+  #   ports:
+  #     - "8080:80"
+  #   environment:
+  #     - WHISPER_MODEL=small
+  #     - WHISPER_LANGUAGE=ja
+  #     - WHISPER_THREADS=4
+  #   networks:
+  #     - discord-bot-network
+
+volumes:
+  whisper_data:
+    driver: local
+
+networks:
+  discord-bot-network:
+    external: true

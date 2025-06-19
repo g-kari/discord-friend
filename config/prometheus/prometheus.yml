@@ -1,0 +1,54 @@
+# Prometheus Configuration for Local LLM Infrastructure Monitoring
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node Exporter (System metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Ollama metrics
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['ollama:11434']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # vLLM metrics
+  - job_name: 'vllm'
+    static_configs:
+      - targets: ['vllm:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  # PostgreSQL metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+
+  # Discord Bot Application metrics
+  - job_name: 'discord-bot'
+    static_configs:
+      - targets: ['discord-bot:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
