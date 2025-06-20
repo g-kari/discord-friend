@@ -42,7 +42,7 @@ func (l *LLMClient) Generate(prompt string) (string, error) {
 
 func (l *LLMClient) generateOllama(prompt string) (string, error) {
 	req := OllamaRequest{
-		Model:  "llama3.2:1b",
+		Model:  "qwen2.5:7b",
 		Prompt: prompt,
 		Stream: false,
 	}

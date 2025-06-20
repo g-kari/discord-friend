@@ -577,22 +577,39 @@ func (v *VADRecorder) generateTTS(text string) {
 		return
 	}
 
-	// Generate TTS audio file
-	audioFile, err := v.tts.GenerateSpeech(text, 1) // Speaker ID 1
+	// Generate TTS audio file using ずんだもん (Speaker ID 3)
+	audioFile, err := v.tts.GenerateSpeech(text, 3)
 	if err != nil {
 		log.Printf("❌ TTS generation failed: %v", err)
+		v.session.ChannelMessageSend(v.channelID, "❌ **音声合成エラー**: "+err.Error())
 		return
 	}
 
 	log.Printf("🔊 Generated TTS audio: %s", audioFile)
 
-	// TODO: Implement voice playback in Discord
-	// For now, just log that TTS is ready
-	log.Printf("🔊 TTS ready for playback: %s", audioFile)
+	// Create audio player and play the TTS audio
+	player, err := NewAudioPlayer(v.vc)
+	if err != nil {
+		log.Printf("❌ Failed to create audio player: %v", err)
+		v.session.ChannelMessageSend(v.channelID, "❌ **音声再生準備エラー**")
+		return
+	}
 
-	// Cleanup after some time
+	// Send Discord message
+	v.session.ChannelMessageSend(v.channelID, "🔊 **音声再生中...**")
+
+	// Play audio in voice channel
+	err = player.PlayAudioFile(audioFile)
+	if err != nil {
+		log.Printf("❌ Audio playback failed: %v", err)
+		v.session.ChannelMessageSend(v.channelID, "❌ **音声再生エラー**: "+err.Error())
+	} else {
+		log.Printf("✅ Audio playback completed successfully")
+	}
+
+	// Cleanup after playback
 	go func() {
-		time.Sleep(30 * time.Second)
+		time.Sleep(10 * time.Second)
 		os.Remove(audioFile)
 	}()
 }

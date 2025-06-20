@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  voicevox:
+    image: voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+    container_name: voicevox-tts
+    restart: unless-stopped
+    ports:
+      - "50021:50021"
+    environment:
+      - VOICEVOX_CPU_NUM_THREADS=4
+    networks:
+      - discord-bot-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:50021/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - voicevox_data:/opt/voicevox_engine
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # GPU version (uncomment if you have NVIDIA GPU support)
+  # voicevox-gpu:
+  #   image: voicevox/voicevox_engine:nvidia-ubuntu20.04-latest
+  #   container_name: voicevox-tts-gpu
+  #   restart: unless-stopped
+  #   runtime: nvidia
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   ports:
+  #     - "50021:50021"
+  #   environment:
+  #     - NVIDIA_VISIBLE_DEVICES=all
+  #     - CUDA_VISIBLE_DEVICES=0
+  #     - VOICEVOX_CPU_NUM_THREADS=4
+  #   networks:
+  #     - discord-bot-network
+  #   volumes:
+  #     - voicevox_data:/opt/voicevox_engine
+
+volumes:
+  voicevox_data:
+    driver: local
+
+networks:
+  discord-bot-network:
+    external: true

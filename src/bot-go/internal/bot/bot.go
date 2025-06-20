@@ -8,17 +8,20 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/gizensya/discord-friend/internal/ai"
 	"github.com/gizensya/discord-friend/internal/config"
+	"github.com/gizensya/discord-friend/internal/screen"
 	"github.com/gizensya/discord-friend/internal/voice"
 )
 
 type Bot struct {
-	config    *config.Config
-	session   *discordgo.Session
-	whisper   *ai.WhisperClient
-	llm       *ai.LLMClient
-	tts       *ai.TTSClient
-	recorder  *voice.AudioRecorder
+	config      *config.Config
+	session     *discordgo.Session
+	whisper     *ai.WhisperClient
+	llm         *ai.LLMClient
+	tts         *ai.TTSClient
+	vision      *ai.VisionClient
+	recorder    *voice.AudioRecorder
 	vadRecorder *voice.VADRecorder
+	screenCap   *screen.ScreenCapture
 }
 
 func NewBot(cfg *config.Config) (*Bot, error) {
@@ -32,13 +35,17 @@ func NewBot(cfg *config.Config) (*Bot, error) {
 	whisper := ai.NewWhisperClient(cfg.WhisperAPIURL)
 	llm := ai.NewLLMClient(cfg)
 	tts := ai.NewTTSClient(cfg.AivisSpeechAPIURL)
+	vision := ai.NewVisionClient(cfg)
+	screenCap := screen.NewScreenCapture()
 
 	bot := &Bot{
-		config:  cfg,
-		session: dg,
-		whisper: whisper,
-		llm:     llm,
-		tts:     tts,
+		config:    cfg,
+		session:   dg,
+		whisper:   whisper,
+		llm:       llm,
+		tts:       tts,
+		vision:    vision,
+		screenCap: screenCap,
 	}
 
 	// Add event handlers
@@ -74,15 +81,20 @@ func (b *Bot) onReady(s *discordgo.Session, event *discordgo.Ready) {
 }
 
 func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.ApplicationCommandData().Name == "join" {
+	switch i.ApplicationCommandData().Name {
+	case "join":
 		b.handleJoinCommand(s, i)
-	} else if i.ApplicationCommandData().Name == "leave" {
+	case "leave":
 		b.handleLeaveCommand(s, i)
-	} else if i.ApplicationCommandData().Name == "record" {
+	case "record":
 		b.handleRecordCommand(s, i)
-	} else if i.ApplicationCommandData().Name == "listen" {
+	case "listen":
 		b.handleListenCommand(s, i)
-	} else if i.ApplicationCommandData().Name == "ping" {
+	case "screenshot":
+		b.handleScreenshotCommand(s, i)
+	case "screen_share":
+		b.handleScreenShareCommand(s, i)
+	case "ping":
 		b.handlePingCommand(s, i)
 	}
 }
@@ -104,6 +116,14 @@ func (b *Bot) registerCommands() error {
 		{
 			Name:        "listen",
 			Description: "Start/stop Voice Activity Detection",
+		},
+		{
+			Name:        "screenshot",
+			Description: "Take screenshot and analyze with AI",
+		},
+		{
+			Name:        "screen_share",
+			Description: "Start/stop continuous screen sharing analysis",
 		},
 		{
 			Name:        "ping",
@@ -232,6 +252,58 @@ func (b *Bot) handleListenCommand(s *discordgo.Session, i *discordgo.Interaction
 			Content: "🎧 Listen command - use /join to start voice activity detection",
 		},
 	})
+}
+
+func (b *Bot) handleScreenshotCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Respond immediately
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "📸 Taking screenshot...",
+		},
+	})
+
+	// Take screenshot
+	screenshot, err := b.screenCap.TakeScreenshot()
+	if err != nil {
+		log.Printf("❌ Screenshot failed: %v", err)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ Failed to take screenshot: " + err.Error(),
+		})
+		return
+	}
+
+	log.Printf("📸 Screenshot captured: %s", screenshot)
+
+	// Analyze screenshot with AI
+	analysis, err := b.vision.AnalyzeGameScreen(screenshot)
+	if err != nil {
+		log.Printf("❌ Screenshot analysis failed: %v", err)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "📸 Screenshot taken but analysis failed: " + err.Error(),
+		})
+		return
+	}
+
+	// Send analysis result
+	s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		Content: "🔍 **Screen Analysis**:\n" + analysis,
+	})
+
+	log.Printf("✅ Screenshot analysis completed")
+}
+
+func (b *Bot) handleScreenShareCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "🖥️ Screen sharing analysis feature coming soon...",
+		},
+	})
+
+	// TODO: Implement continuous screen sharing
+	// This would start a goroutine that takes screenshots every few seconds
+	// and analyzes them for changes or interesting events
 }
 
 func (b *Bot) handlePingCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
