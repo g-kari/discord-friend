@@ -56,19 +56,27 @@ func NewVADRecorder(vc *discordgo.VoiceConnection, session *discordgo.Session, c
 
 // Start begins voice activity detection
 func (v *VADRecorder) Start() error {
-	// Check if OpusRecv channel already exists, don't recreate it
-	if v.vc.OpusRecv == nil {
-		v.vc.OpusRecv = make(chan *discordgo.Packet, 100)
-		log.Printf("✅ VAD: Created OpusRecv channel with buffer size 100")
-	} else {
-		log.Printf("ℹ️ VAD: Using existing OpusRecv channel")
+	// Wait for the voice connection to be ready
+	for !v.vc.Ready {
+		log.Printf("⏳ Waiting for voice connection to be ready...")
+		time.Sleep(100 * time.Millisecond)
 	}
-
-	// Wait a moment for Discord connection to stabilize
+	
+	// Wait a bit more for OpusRecv to be initialized by DiscordGo
 	time.Sleep(500 * time.Millisecond)
+	
+	// Check if OpusRecv channel exists (it should be created by DiscordGo)
+	if v.vc.OpusRecv == nil {
+		return fmt.Errorf("OpusRecv channel not initialized by DiscordGo - ensure you joined with deaf=false")
+	}
+	
+	log.Printf("✅ VAD: Using DiscordGo's OpusRecv channel (buffer: %d)", cap(v.vc.OpusRecv))
+	
+	// Set speaking state to false (we're listening, not speaking)
+	v.vc.Speaking(false)
 
 	log.Printf("🎤 Voice Activity Detection started - speak to trigger recording")
-	log.Printf("🔍 Voice connection state: Ready=%v", v.vc.Ready)
+	log.Printf("🔍 Voice connection state: Ready=%v, OpusRecv=%p", v.vc.Ready, v.vc.OpusRecv)
 
 	// Send initial message
 	v.session.ChannelMessageSend(v.channelID, "🎤 **音声検知開始** - 話しかけると自動で録音・応答します")
@@ -97,10 +105,24 @@ func (v *VADRecorder) Stop() {
 
 func (v *VADRecorder) listen() {
 	log.Printf("🎧 VAD listener started, waiting for voice packets...")
-	log.Printf("🔍 OpusRecv channel: %p, buffer size: %d", v.vc.OpusRecv, cap(v.vc.OpusRecv))
-
+	if v.vc.OpusRecv != nil {
+		log.Printf("✅ OpusRecv channel: %p, buffer size: %d", v.vc.OpusRecv, cap(v.vc.OpusRecv))
+	} else {
+		log.Printf("❌ OpusRecv channel is nil!")
+		return
+	}
+	
+	// Additional voice connection diagnostics
+	log.Printf("🔍 Voice connection diagnostics:")
+	log.Printf("   - Ready: %v", v.vc.Ready)
+	log.Printf("   - OpusRecv: %p", v.vc.OpusRecv)
+	log.Printf("   - OpusSend: %p", v.vc.OpusSend)
+	
+	// Test: Send a simple message to indicate we're listening
+	log.Printf("🎯 Starting to listen on OpusRecv channel...")
+	
 	// Debug: Check if channel is receiving anything periodically
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(10 * time.Second) // Increased to 10s to reduce spam
 	defer ticker.Stop()
 
 	// Track statistics
@@ -115,19 +137,25 @@ func (v *VADRecorder) listen() {
 		case <-ticker.C:
 			if packetsReceived == 0 {
 				log.Printf("💭 VAD listener still waiting... (no voice packets received)")
+				log.Printf("🔍 Voice connection debug: Ready=%v, OpusRecv channel open=%v",
+					v.vc.Ready, v.vc.OpusRecv != nil)
 			} else {
 				log.Printf("📊 VAD Statistics: %d total packets, %d voice packets", packetsReceived, voicePackets)
 			}
-			log.Printf("🔍 Voice connection status: Ready=%v, OpusRecv buffer=%d/%d",
-				v.vc.Ready, len(v.vc.OpusRecv), cap(v.vc.OpusRecv))
-		case packet := <-v.vc.OpusRecv:
+		case packet, ok := <-v.vc.OpusRecv:
+			if !ok {
+				log.Printf("❌ OpusRecv channel closed!")
+				return
+			}
+			
 			if packet == nil {
 				log.Printf("⚠️ Received nil packet")
 				continue
 			}
 
 			packetsReceived++
-			log.Printf("🎉 VOICE PACKET RECEIVED! Processing... (Total: %d)", packetsReceived)
+			log.Printf("🎉 VOICE PACKET RECEIVED! SSRC: %d, Opus len: %d (Total: %d)", 
+				packet.SSRC, len(packet.Opus), packetsReceived)
 			v.handleVoicePacket(packet)
 
 			// Check if this was a voice packet

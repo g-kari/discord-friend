@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gizensya/discord-friend/internal/ai"
@@ -124,41 +125,111 @@ func (b *Bot) registerCommands() error {
 }
 
 func (b *Bot) handleJoinCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	// Implementation for join command
+	// Respond immediately
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: "🎤 Joining voice channel...",
+			Content: "🎤 Voice channel join starting...",
 		},
+	})
+
+	// Find user's voice channel
+	guild, err := s.State.Guild(i.GuildID)
+	if err != nil {
+		log.Printf("Failed to get guild: %v", err)
+		return
+	}
+
+	var voiceChannelID string
+	for _, vs := range guild.VoiceStates {
+		if vs.UserID == i.Member.User.ID {
+			voiceChannelID = vs.ChannelID
+			break
+		}
+	}
+
+	if voiceChannelID == "" {
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ You need to join a voice channel first!",
+		})
+		return
+	}
+
+	// Join voice channel (mute=false, deaf=false for receiving audio)
+	vc, err := s.ChannelVoiceJoin(i.GuildID, voiceChannelID, false, false)
+	if err != nil {
+		log.Printf("Failed to join voice channel: %v", err)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ Failed to join voice channel: " + err.Error(),
+		})
+		return
+	}
+	
+	log.Printf("🎧 Voice connection established: Ready=%v", vc.Ready)
+	
+	// Wait for voice connection to be fully ready
+	for !vc.Ready {
+		log.Printf("⏳ Waiting for voice connection to be ready...")
+		time.Sleep(100 * time.Millisecond)
+	}
+	
+	log.Printf("✅ Voice connection is ready, OpusRecv channel: %p", vc.OpusRecv)
+
+	// Create VAD recorder
+	b.vadRecorder = voice.NewVADRecorder(vc, s, i.ChannelID, b.whisper, b.llm, b.tts)
+
+	// Start voice activity detection
+	err = b.vadRecorder.Start()
+	if err != nil {
+		log.Printf("Failed to start VAD: %v", err)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ Failed to start voice detection: " + err.Error(),
+		})
+		return
+	}
+
+	log.Printf("✅ Successfully joined voice channel and started VAD")
+	s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		Content: "✅ **Voice channel joined!** Voice activity detection started - speak to trigger recording.",
 	})
 }
 
 func (b *Bot) handleLeaveCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	// Implementation for leave command
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: "👋 Leaving voice channel...",
 		},
 	})
+
+	// Stop VAD if running
+	if b.vadRecorder != nil {
+		b.vadRecorder.Stop()
+		b.vadRecorder = nil
+	}
+
+	// Leave voice channel
+	for _, vs := range s.VoiceConnections {
+		vs.Disconnect()
+	}
+
+	log.Println("✅ Left voice channel")
 }
 
 func (b *Bot) handleRecordCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	// Implementation for record command
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: "🎵 Starting voice recording...",
+			Content: "🎵 Manual recording not yet implemented - use /join for automatic voice detection",
 		},
 	})
 }
 
 func (b *Bot) handleListenCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	// Implementation for listen command
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: "👂 Voice Activity Detection started...",
+			Content: "🎧 Listen command - use /join to start voice activity detection",
 		},
 	})
 }

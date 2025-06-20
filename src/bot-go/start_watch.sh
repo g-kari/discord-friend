@@ -6,7 +6,7 @@ echo "🚀 Starting Discord Go Bot development server..."
 # Check if Air is installed
 if ! command -v air &> /dev/null; then
     echo "❌ Air not found. Installing Air for live reload..."
-    go install github.com/cosmtrek/air@latest
+    go install github.com/air-verse/air@latest
 fi
 
 # Ensure logs directory exists
@@ -22,4 +22,4 @@ echo "🎤 Bot will auto-restart on code changes"
 echo "🛑 Press Ctrl+C to stop"
 echo ""
 
-air -c .air.toml
+$HOME/go/bin/air -c .air.toml
