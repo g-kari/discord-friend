@@ -243,3 +243,21 @@ _site/
 
 tmp/*
 src/bot-go/tmp/*
+
+# Go specific
+*.exe
+*.test
+*.prof
+*.cov
+
+# Python specific
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Air logs
+*.logs

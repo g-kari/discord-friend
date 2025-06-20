@@ -232,13 +232,31 @@ grep "VAD Statistics" logs/bot.log
 
 ## Git Commit Guidelines
 
-- **Format**: Use conventional commit format when possible
-- **Frequency**: Commit after each feature implementation or bug fix
-- **Messages**: Be descriptive about what was changed and why
+### 必須コミット規則
+- **必須**: 一定の処理が完了したら必ずコミットすること
+- **頻度**: 機能実装やバグ修正の都度コミット
+- **タイミング**: 以下の場合は必ずコミット
+  - 新機能の実装完了時
+  - バグ修正完了時
+  - リファクタリング完了時
+  - 設定変更完了時
+  - ドキュメント更新完了時
+
+### コミットフォーマット
+- **Format**: 可能な限り conventional commit format を使用
+- **Messages**: 変更内容と理由を明確に記述
 - **Examples**:
   ```
   feat: implement real Discord voice recording with gopus decoder
   fix: resolve VAD timing issues for automatic recording
   refactor: improve voice packet processing performance
   docs: update CLAUDE.md with voice system architecture
+  chore: clean up unnecessary files and directories
   ```
+
+### 作業完了時の必須手順
+1. コードの実装・修正
+2. テストの実行（必要に応じて）
+3. **必須**: git add で変更をステージング
+4. **必須**: git commit で変更をコミット
+5. 必要に応じて git push でリモートに反映
