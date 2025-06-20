@@ -2,8 +2,8 @@ version: '3.8'
 
 services:
   whisper:
-    image: ghcr.io/mutablelogic/go-whisper:latest-cuda
-    container_name: whisper-server
+    image: onerahmet/openai-whisper-asr-webservice:latest-gpu
+    container_name: faster-whisper-server
     restart: unless-stopped
     runtime: nvidia
     deploy:
@@ -12,25 +12,14 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [ gpu ]
-    volumes:
-      - whisper_data:/data
+              capabilities: [gpu]
     ports:
-      - "8080:80"
+      - "8080:9000"
     environment:
-      - WHISPER_MODEL=small # Default model (can be tiny, base, small, medium, large)
-      - WHISPER_LANGUAGE=ja # Default to Japanese
-      - WHISPER_THREADS=4 # Number of threads to use
-    command:
-      [
-        "server",
-        "--model",
-        "/data/models/ggml-small-q5_1.bin", # Japanese model
-        "--language",
-        "ja",
-        "--threads",
-        "4"
-      ]
+      - ASR_MODEL=medium
+      - ASR_ENGINE=faster_whisper
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
     networks:
       - discord-bot-network
   # Alternative CPU-only version (comment out the above and uncomment below if no GPU)

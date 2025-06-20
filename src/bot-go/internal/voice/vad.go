@@ -313,34 +313,45 @@ func (v *VADRecorder) processRecording(audioBuffer [][]byte) {
 		log.Printf("🎧 Whisper request: %s (%.1f KB)", audioFile, audioSizeKB)
 	}
 
+	// Test: Show file path and attempt Whisper transcription
+	log.Printf("🎧 Attempting Whisper transcription: %s (%.1f KB)", audioFile, audioSizeKB)
+	
 	// Perform speech recognition
 	transcription, err := v.whisper.TranscribeAudio(audioFile)
 	if err != nil {
-		log.Printf("❌ Whisper error: %v", err)
+		log.Printf("❌ Whisper API error (detailed): %v", err)
+		if v.whisper != nil {
+			log.Printf("🔧 Whisper service configured but not responding")
+		} else {
+			log.Printf("🔧 Whisper client not initialized")
+		}
 
 		// Check if we have a valid audio file
 		if info, statErr := os.Stat(audioFile); statErr == nil && info.Size() > 44 {
-			transcription = "音声ファイルは作成されましたが、Whisperサービスに接続できませんでした。"
-			v.session.ChannelMessageSend(v.channelID, "⚠️ **音声認識サービス未起動** - ファイルは保存済み: "+audioFile)
+			transcription = fmt.Sprintf("音声ファイルは作成されました (%.1f KB) が、Whisperサービスに接続できませんでした。", audioSizeKB)
+			v.session.ChannelMessageSend(v.channelID, "⚠️ **音声認識サービス接続エラー**\\n"+
+				fmt.Sprintf("ファイル: `%s` (%.1f KB)\\n", audioFile, audioSizeKB)+
+				"Whisperサーバーが起動していません。")
 		} else {
 			transcription = "音声ファイルの作成に失敗しました。"
 			v.session.ChannelMessageSend(v.channelID, "❌ **音声ファイル作成エラー** - Opus変換に失敗しました")
 		}
 	} else {
-		log.Printf("✅ Whisper success: %s", transcription)
+		log.Printf("✅ Whisper transcription success: %s", transcription)
 
 		// Check if we got meaningful transcription
 		if transcription == "" || len(transcription) < 3 {
 			transcription = "音声が明確に認識できませんでした。もう一度お試しください。"
-			v.session.ChannelMessageSend(v.channelID, "🔇 **認識結果**: "+transcription)
+			v.session.ChannelMessageSend(v.channelID, "🔇 **音声認識結果**: "+transcription)
 		} else {
 			// Send successful transcription result
 			v.session.ChannelMessageSend(v.channelID, "🎧 **音声認識成功**: "+transcription)
 		}
 	}
 
-	// Generate AI response based on actual transcription
-	response, err := v.llm.Generate(transcription)
+	// Generate AI response with gaming buddy context
+	gamingBuddyPrompt := v.createGamingBuddyPrompt(transcription)
+	response, err := v.llm.Generate(gamingBuddyPrompt)
 	if err != nil {
 		log.Printf("❌ AI response error: %v", err)
 		v.session.ChannelMessageSend(v.channelID, "❌ AI応答エラー")
@@ -539,6 +550,24 @@ func (v *VADRecorder) writePCMToWAV(pcmData []int16, filename string, sampleRate
 	}
 
 	return nil
+}
+
+// createGamingBuddyPrompt creates a gaming buddy context for AI responses
+func (v *VADRecorder) createGamingBuddyPrompt(userMessage string) string {
+	const systemPrompt = `あなたは親しいゲーミング友達です。
+
+特徴：
+- フレンドリーで親しみやすい
+- ゲーム好き
+- 短く自然な日本語で返答
+- 絵文字を時々使う
+- 相手に共感して話を広げる
+
+ユーザー: `
+
+	return systemPrompt + userMessage + `
+
+フレンド: `
 }
 
 // generateTTS generates TTS audio and plays it in the voice channel

@@ -2,7 +2,6 @@ package ai
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -39,8 +38,8 @@ func (w *WhisperClient) TranscribeAudio(audioFile string) (string, error) {
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
-	// Add file field
-	part, err := writer.CreateFormFile("file", filepath.Base(audioFile))
+	// Add audio file field (Faster-Whisper format)
+	part, err := writer.CreateFormFile("audio_file", filepath.Base(audioFile))
 	if err != nil {
 		return "", fmt.Errorf("failed to create form file: %w", err)
 	}
@@ -49,15 +48,10 @@ func (w *WhisperClient) TranscribeAudio(audioFile string) (string, error) {
 		return "", fmt.Errorf("failed to copy file: %w", err)
 	}
 
-	// Add language field for Japanese
-	if err := writer.WriteField("language", "ja"); err != nil {
-		return "", fmt.Errorf("failed to write language field: %w", err)
-	}
-
 	writer.Close()
 
-	// Create request
-	req, err := http.NewRequest("POST", w.apiURL+"/v1/audio/transcriptions", &buf)
+	// Create request (Faster-Whisper endpoint)
+	req, err := http.NewRequest("POST", w.apiURL+"/asr", &buf)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -73,14 +67,15 @@ func (w *WhisperClient) TranscribeAudio(audioFile string) (string, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("whisper API error %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("whisper API error %d: %s (URL: %s)", resp.StatusCode, string(body), w.apiURL+"/asr")
 	}
 
-	// Parse response
-	var whisperResp WhisperResponse
-	if err := json.NewDecoder(resp.Body).Decode(&whisperResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+	// Read plain text response (Faster-Whisper returns plain text)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	return whisperResp.Text, nil
+	// Return the transcribed text directly
+	return string(body), nil
 }
