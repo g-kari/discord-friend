@@ -1,0 +1,62 @@
+# Site settings
+title: "Discord AI Voice Bot"
+description: "日本語対応のDiscord AIボイスボット - Go実装"
+baseurl: "/discord-friend"
+url: "https://g-kari.github.io"
+
+# GitHub repository
+repository: "g-kari/discord-friend"
+github:
+  repository_url: "https://github.com/g-kari/discord-friend"
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+theme: minima
+
+# Jekyll plugins
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+# Navigation
+header_pages:
+  - getting-started.md
+  - development.md
+  - api-reference.md
+  - troubleshooting.md
+
+# Collections
+collections:
+  guides:
+    output: true
+    permalink: /:collection/:name/
+
+# Defaults
+defaults:
+  - scope:
+      path: ""
+      type: "posts"
+    values:
+      layout: "post"
+  - scope:
+      path: ""
+      type: "pages"
+    values:
+      layout: "page"
+  - scope:
+      path: ""
+      type: "guides"
+    values:
+      layout: "guide"
+
+# Exclude from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor/bundle/
+  - vendor/cache/
+  - vendor/gems/
+  - vendor/ruby/
