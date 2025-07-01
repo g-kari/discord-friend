@@ -22,7 +22,6 @@ plugins:
 
 # Navigation
 header_pages:
-  - index.md
   - getting-started.md
   - development.md
   - api-reference.md

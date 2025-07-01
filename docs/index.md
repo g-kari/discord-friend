@@ -51,10 +51,10 @@ sudo apt-get install libopus-dev  # Ubuntu/Debian
 ## 📚 ドキュメント
 
 ### 基本ガイド
-- [**インストール・セットアップ**](getting-started.html) - 環境構築から初回起動まで
-- [**開発ガイド**](development.html) - 開発環境の構築と開発ワークフロー
-- [**API リファレンス**](api-reference.html) - コマンドとAPI仕様
-- [**トラブルシューティング**](troubleshooting.html) - よくある問題と解決方法
+- [**インストール・セットアップ**](getting-started/) - 環境構築から初回起動まで
+- [**開発ガイド**](development/) - 開発環境の構築と開発ワークフロー
+- [**API リファレンス**](api-reference/) - コマンドとAPI仕様
+- [**トラブルシューティング**](troubleshooting/) - よくある問題と解決方法
 
 ### 技術詳細
 - [**CLAUDE.md**](https://github.com/g-kari/discord-friend/blob/main/CLAUDE.md) - 開発者向け技術詳細ガイド

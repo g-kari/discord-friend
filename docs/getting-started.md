@@ -236,11 +236,11 @@ Error: invalid bot token
 
 問題が解決しない場合は：
 - [GitHub Issues](https://github.com/g-kari/discord-friend/issues) で報告
-- [トラブルシューティングガイド](troubleshooting.html) を参照
+- [トラブルシューティングガイド](../troubleshooting/) を参照
 - ログファイル (`logs/bot.log`) の内容を確認
 
 ## 次のステップ
 
-- [開発ガイド](development.html) - 開発環境の詳細設定
-- [API リファレンス](api-reference.html) - コマンドとAPI仕様
+- [開発ガイド](../development/) - 開発環境の詳細設定
+- [API リファレンス](../api-reference/) - コマンドとAPI仕様
 - [CLAUDE.md](https://github.com/g-kari/discord-friend/blob/main/CLAUDE.md) - 技術詳細

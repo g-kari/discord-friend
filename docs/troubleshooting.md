@@ -471,7 +471,7 @@ grep -E "(Memory|CPU|Goroutine)" logs/bot.log | tail -5
 
 - **[GitHub Issues](https://github.com/g-kari/discord-friend/issues)** - バグ報告・機能要求
 - **[GitHub Discussions](https://github.com/g-kari/discord-friend/discussions)** - 質問・討論
-- **[プロジェクトドキュメント](index.html)** - 基本的な使用方法
+- **[プロジェクトドキュメント](../)** - 基本的な使用方法
 
 ### 緊急時の対処
 
