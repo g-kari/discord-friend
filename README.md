@@ -1,293 +1,349 @@
-# AI会話ボイスボット（Dify × AIAvatarKit × AivisSpeech 構成）
+# Discord AI Voice Bot (Go Implementation)
+
+## 📋 目次 (Table of Contents)
+
+- [概要](#概要) - プロジェクトの概要と主要機能
+- [システム構成](#システム構成) - アーキテクチャと技術スタック
+- [処理フロー](#処理フロー) - ボットの動作原理
+- [🚀 クイックスタート](#-クイックスタート) - 環境構築と起動方法
+- [Discord コマンド](#discord-コマンド) - 利用可能なコマンド一覧
+- [📚 ドキュメント](#-ドキュメント) - 関連ドキュメントへのリンク
+- [🔧 開発・テスト](#-開発テスト) - 開発者向け情報
+- [🛠️ トラブルシューティング](#️-トラブルシューティング) - よくある問題と解決法
+- [🔒 セキュリティ](#-セキュリティ) - セキュリティに関する注意事項
+
+---
 
 ## 概要
 
-このプロジェクトは、Dify・AIAvatarKit・AivisSpeech を組み合わせて構築する、マルチモーダルなAI会話ボイスボットです。
-Discordやメタバース、Webアプリ等のプラットフォームで、音声認識（STT）、大規模言語モデル（LLM）、高品質な音声合成（TTS）を統合的に提供します。
+このプロジェクトは、**Go言語で実装された高性能なDiscord AI音声ボット**です。
+リアルタイムの音声認識（STT）、大規模言語モデル（LLM）、高品質な音声合成（TTS）を統合し、Discordのボイスチャンネルで自然な日本語会話を実現します。
 
-このボットを使用すると、Discord のボイスチャンネルで自然に会話するように AI と対話できます。ユーザーが話し始めると、ボットは音声を自動的に検出して録音し、その内容に基づいて応答します。また、カスタムプロンプトを設定することで、AI の性格や応答スタイルをカスタマイズすることも可能です。
+### 主な特徴
 
-さらに、オプションの MCP（マルチチャンネルプレゼンス）機能を使用すると、ボットが起動時に指定されたサーバーとボイスチャンネルに自動的に参加するよう設定できます。
+- **🎯 Go言語による高性能実装**: 軽量で高速な処理
+- **🎤 リアルタイム音声処理**: Discord Opus音声の直接デコード
+- **🤖 Voice Activity Detection (VAD)**: 自動音声検出・録音システム  
+- **🧠 多様なAI連携**: Ollama（ローカル）、Dify、OpenAI対応
+- **🔊 高品質TTS**: AivisSpeech（VOICEVOX）による日本語音声合成
+- **📷 スクリーン共有認識**: リアルタイム画面解析
+- **👁️ Vision AI**: 画像解析機能（OpenAI Vision、Ollama LLaVA）
+- **⚡ ホットリロード**: Air による開発時の自動再起動
 
 ---
 
 ## システム構成
 
-- **Dify**  
-  オープンソースのLLMアプリ開発基盤。プロンプト管理・APIラッパー・ワークフロー設計・外部ツール連携が可能。
+### Go実装アーキテクチャ
 
-  - [Dify公式](https://github.com/langgenius/dify)
+```
+src/bot-go/
+├── cmd/bot/          # メインエントリーポイント
+├── internal/         # 内部パッケージ
+│   ├── ai/          # AI サービス (Whisper, LLM, TTS, Vision)
+│   ├── bot/         # ボットコアロジックとハンドラー
+│   ├── config/      # 設定管理
+│   └── voice/       # 音声録音とVADシステム
+├── .air.toml        # Air設定ファイル
+├── .env.example     # 環境変数テンプレート
+├── go.mod           # Go依存関係
+└── start_watch.sh   # 開発用スクリプト
+```
 
-- **AIAvatarKit**  
-  モジュール型の会話AIフレームワーク。
+### 主要技術スタック
 
-  - VAD（音声区間検出）、STT（Google/Azure/OpenAI）、LLM（ChatGPT/Gemini/Claude/Dify/LiteLLM）、TTS（VOICEVOX/AivisSpeech/他）を柔軟に組み合わせ可能
-  - WebSocket/HTTPでリアルタイム連携
-  - メタバースやIoTデバイスにも対応
-  - [AIAvatarKit公式](https://github.com/uezo/aiavatarkit)
+- **[discordgo](https://github.com/bwmarrin/discordgo)**: Discord API Go ライブラリ
+- **[layeh.com/gopus](https://github.com/layeh/gopus)**: Discord用リアルOpus音声コーデック
+- **[Air](https://github.com/cosmtrek/air)**: Go開発用ライブリロード
+- **[go-whisper](https://github.com/mutablelogic/go-whisper)**: 音声認識（Whisper Go実装）
+- **[Ollama](https://ollama.ai)**: ローカルLLM実行環境
+- **[AivisSpeech](https://github.com/Aivis-Project/AivisSpeech)**: 日本語TTS音声合成エンジン
 
-- **AivisSpeech**  
-  高品質な日本語TTSエンジン。AIAvatarKitのTTSバックエンドとして利用可能。
-  - [AivisSpeech公式](https://github.com/Aivis-Project/AivisSpeech)
+## 処理フロー
 
-## アーキテクチャ
+このボットは以下の処理フローで動作します：
 
-このボットは以下の主な実行フローに従っています：
+### 1. 音声認識フロー
+```
+Discord音声 → UDPパケット → RTP解析 → Opus抽出 → VAD解析
+    ↓
+音声検出 → 録音開始 → Opusパケットバッファ → 無音検出
+    ↓
+録音停止 → Opusデコード(gopus) → PCM組み立て → WAV生成
+    ↓
+go-whisper API → 日本語音声認識 → テキスト出力
+```
 
-1. **音声認識（Voice Recognition）**:
-   - ユーザーがボイスチャンネルで話す
-   - 音声がキャプチャされ処理される
-   - OpenAIを使用して音声がテキストに変換される
-   - テキストがAIサービスに送信される
+### 2. AI応答フロー
+```
+認識テキスト → LLM処理(Ollama/Dify) → AI応答生成
+    ↓
+AivisSpeech TTS → 音声合成 → Discordボイスチャンネル再生
+```
 
-2. **AI応答（AI Response）**:
-   - AIサービスからの応答が処理される
-   - テキストがAivisSpeechを使用して音声に変換される
-   - 音声がボイスチャンネルで再生される
-
-3. **コマンド処理（Command Handling）**:
-   - ユーザーはDiscordのテキストコマンドやスラッシュコマンドでボットを制御できる
-   - コマンドは設定の管理、アクションのトリガー、情報の照会などを行う
-
-4. **自動参加機能（Auto-Join Feature）**:
-   - ボットは起動時に指定されたボイスチャンネルに自動的に参加できる
-   - `MCP_SERVERS` 環境変数を介して設定
-   - ボットが特定のチャンネルでアクティブである必要がある本番環境に役立つ
-
----
-
-## 主な機能
-
-- **ボイスチャンネル常駐型**
-- **話し始めたユーザーを検知して自動録音**（無音検知で終了）
-- **キーワード検出**（特定キーワードを含む場合のみ応答）
-- **会話履歴の永続化**（SQLite）
-- **カスタムプロンプト**（ユーザー別にAIの応答スタイル設定）
-- **MCPサーバー自動接続機能**（指定したボイスチャンネルに自動参加）
-- **感情分析機能**（日本語テキストから感情値を検出・分析）
-
-## MCPサーバー自動接続機能
-
-このボットには、起動時に特定のDiscordサーバーとボイスチャンネルに自動的に接続する機能があります。これは、MCPサーバー（マルチチャンネルプレゼンス）機能と呼ばれています。
-
-### 設定方法
-
-1. `.env` ファイルに `MCP_SERVERS` 環境変数を設定します：
-   ```
-   MCP_SERVERS={"サーバー名": ["ボイスチャンネル1", "ボイスチャンネル2"]}
-   ```
-
-2. 既存のボイスチャンネルを追加するには、以下のスラッシュコマンドを使用します：
-   - `/add_mcp_server` - 現在のボイスチャンネルをリストに追加
-   - `/add_mcp_server add_to_config:true` - 設定を.envファイルに永続的に保存
-
-### 利用可能なコマンド
-
-- `/list_mcp_servers` - 設定されているMCPサーバーとチャンネルのリストを表示
-- `/remove_mcp_server` - MCPサーバーリストからチャンネルを削除
-
-詳細な使用方法とテスト方法については、[MCP Server Auto-Join Feature - Testing Guide](src/bot/docs/mcp_servers_testing.md) を参照してください。
+### 3. Voice Activity Detection (VAD)
+- **パケット解析**: パケットサイズによる音声/無音判定（>50バイト = 音声）
+- **スマートタイミング**: 1秒無音閾値、200ms最小録音、15秒最大録音
+- **リアルタイム処理**: 連続音声パケットモニタリング
+- **スレッドセーフ**: 同時録音・再生対応
 
 ---
 
-## クイックスタート
+## 🚀 クイックスタート
 
-### 開発環境のセットアップ
-
-#### オプション 1: Dev Containers を使用する方法（推奨）
-
-このプロジェクトは Dev Containers を使用して一貫した開発環境を提供します：
-
-1. [Visual Studio Code](https://code.visualstudio.com/) をインストール
-2. [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) 拡張機能をインストール
-3. リポジトリをクローンして VS Code で開く
-4. プロンプトが表示されたら「Reopen in Container」を選択するか、コマンドパレット (F1) を使用して「Remote-Containers: Reopen in Container」を選択
-
-#### オプション 2: uv を使用したローカル開発
-
-1. uvのインストール（高速パッケージマネージャー）
-   ```bash
-   # Unixシステム
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   
-   # Windows (PowerShell)
-   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-   ```
-
-2. セットアップと仮想環境設定
-   ```bash
-   cd src/bot
-   
-   # 仮想環境を作成
-   uv venv
-   
-   # 仮想環境を有効化
-   # Unixの場合
-   source .venv/bin/activate
-   # Windowsの場合
-   .venv\Scripts\activate
-   
-   # 依存パッケージのインストール（uvで高速化）
-   uv pip install -r requirements.txt
-   ```
-
-### 環境変数の設定
+### 1. Go環境のセットアップ
 
 ```bash
-cd src/bot
-cp aiavatar_env.example .env
-# .envファイルを編集して必要なAPIキーなどを設定
+# Go 1.21+ が必要
+go version
+
+# プロジェクトのクローン
+git clone https://github.com/g-kari/discord-friend.git
+cd discord-friend/src/bot-go
+```
+
+### 2. 依存関係のインストール
+
+```bash
+# Go モジュールの依存関係をインストール
+go mod download
+
+# システム依存関係（Ubuntu/Debian）
+sudo apt-get install libopus-dev
+
+# システム依存関係（macOS）
+brew install opus
+```
+
+### 3. 環境設定
+
+```bash
+# 環境変数ファイルをコピー
+cp .env.example .env
+
+# .env ファイルを編集（必須項目を設定）
 ```
 
 #### 必須環境変数
+```env
+# Discord
+DISCORD_BOT_TOKEN=your_discord_bot_token
 
-- `DISCORD_BOT_TOKEN`: Discord bot トークン
-- `DIFY_API_KEY`: Dify API キー
-- `DIFY_API_URL`: Dify API の URL
-- `OPENAI_API_KEY`: 音声認識に使用する OpenAI API キー
-- `AIVISSPEECH_API_URL`: AivisSpeech API の URL (デフォルト: http://localhost:50021)
+# AI Services
+PREFER_LOCAL_LLM=true
+OLLAMA_API_URL=http://localhost:11434
+OPENAI_API_KEY=your_openai_key  # 音声認識用
 
-#### オプション環境変数
+# Voice Services  
+AIVISSPEECH_API_URL=http://localhost:50021
+WHISPER_API_URL=http://localhost:8080
 
-- `MCP_SERVERS`: 起動時に自動接続するサーバーとボイスチャンネルの JSON 形式の設定
-  例: `{"サーバー名": ["ボイスチャンネル1", "ボイスチャンネル2"]}`
+# Bot Settings
+DEFAULT_RECORDING_DURATION=10
+LOG_LEVEL=INFO
+```
 
-### Botの起動
+### 4. 外部サービスの起動
 
 ```bash
-# 直接起動
-python src/bot/discord_aiavatar_complete.py
+# 1. AivisSpeech (VOICEVOX) を起動
+docker run -p 50021:50021 voicevox/voicevox_engine:latest
 
-# PM2での起動
-pm2 start ecosystem.config.js
+# 2. Ollama を起動（ローカルLLM用）
+ollama serve
+ollama pull qwen2.5:7b  # 日本語モデル
+
+# 3. go-whisper を起動（音声認識用）
+# 詳細: https://github.com/mutablelogic/go-whisper
+```
+
+### 5. ボットの起動
+
+```bash
+# 開発モード（自動リロード）
+./start_watch.sh
+
+# 直接実行
+go run cmd/bot/main.go
+
+# ビルドして実行
+go build -o discord-bot cmd/bot/main.go
+./discord-bot
 ```
 
 ---
 
-## コマンド一覧
-
-### テキストコマンド
-
-以下のコマンドはチャットチャンネルで `!` プレフィックスを使用して実行できます：
-
-- `!join` - ボイスチャンネルに参加
-- `!leave` - ボイスチャンネルから退出
-- `!set_prompt <プロンプト>` - AIのシステムプロンプトを設定
-- `!recording_on [キーワード]` - 録音をオンにし、オプションでキーワードを設定
-- `!recording_off` - 録音をオフにする（Botが反応しなくなる）
-- `!history_clear` - 会話履歴をクリア
+## Discord コマンド
 
 ### スラッシュコマンド
-
-以下のコマンドはDiscordのスラッシュコマンド機能を使用して実行できます：
-
-- `/add_mcp_server` - 現在のボイスチャンネルをMCPサーバーリストに追加
-  - `add_to_config:true` - 設定を.envファイルに保存
-- `/list_mcp_servers` - 設定されているMCPサーバーとチャンネルの一覧を表示
-- `/remove_mcp_server` - MCPサーバーリストからチャンネルを削除
-  - `server_name:"Server Name" channel_name:"Channel Name"` - 特定のサーバーとチャンネルを指定して削除
-  - `remove_from_config:true` - 設定を.envファイルから削除
+- `/join` - ボイスチャンネルに参加（VAD自動開始）
+- `/leave` - ボイスチャンネルから退出
+- `/record` - 手動音声録音（10秒間）
+- `/listen` - Voice Activity Detection の開始/停止
+- `/screenshot` - スクリーンショット撮影・解析
+- `/screen_share` - スクリーン共有解析の開始/停止  
+- `/ping` - ボットの状態確認
 
 ---
 
-## ライセンス
+## 📚 ドキュメント
 
-- Dify: Apache-2.0
-- AIAvatarKit: Apache-2.0
-- AivisSpeech: Apache-2.0
+### 開発者向けドキュメント
+- **[CLAUDE.md](CLAUDE.md)** - Claude AI向け開発ガイド（技術詳細、アーキテクチャ、デバッグ方法）
+- **[OLLAMA_TIPS.md](OLLAMA_TIPS.md)** - Ollama最適化・活用ガイド
+- **[scripts/README.md](scripts/README.md)** - 開発支援スクリプトの使用方法
+
+### プロジェクト管理
+- **[GitHub Issues](https://github.com/g-kari/discord-friend/issues)** - バグ報告・機能要求
+- **[GitHub Pages](https://g-kari.github.io/discord-friend/)** - 詳細なドキュメント
 
 ---
 
-## 備考
+## 🔧 開発・テスト
 
-- 各OSSの詳細なセットアップ・API仕様は公式リポジトリのREADMEを参照してください。
-- AIAvatarKitはDifyやAivisSpeech以外のSTT/LLM/TTSサービスとも柔軟に連携できます。
-- メタバースやIoTデバイス、Webアプリ等への拡張も容易です。
-
-## トラブルシューティング
-
-### 自動接続機能が動作しない場合
-
-1. ボットのログでエラーメッセージを確認する
-2. `MCP_SERVERS` 環境変数のJSON形式が正しいことを確認する
-3. ボットが指定されたボイスチャンネルに参加する権限を持っていることを確認する
-4. サーバー名とチャンネル名が完全に一致していることを確認する（大文字小文字も区別）
-
-### 音声認識の問題
-
-- ボットが音声を認識しない場合は、`!recording_on` コマンドを使用して録音機能が有効になっていることを確認してください
-- 音声認識が不正確な場合は、静かな環境で明確に話すようにしてください
-
-### API接続の問題
-
-- APIキーが正しく設定されていることを確認してください
-- 各サービス（Dify、OpenAI、AivisSpeech）のステータスページでサービスが稼働していることを確認してください
-
-### その他の問題が発生した場合
-
-1. ボットを再起動する
-2. 依存関係を最新バージョンに更新する
-3. GitHub Issuesページで同様の問題が報告されていないか確認する
-
-## 開発者向け情報
-
-このプロジェクトの開発に参加したり、コードを理解したりするための詳細情報は、以下のドキュメントを参照してください：
-
-- [開発ガイド](DEVELOPMENT.md) - プロジェクト構造、キーコンポーネント、アーキテクチャの詳細情報
-- [貢献ガイド](CONTRIBUTING.md) - 開発環境のセットアップ、開発ワークフロー、コーディングスタイルの情報
-- [セキュリティガイドライン](SECURITY.md) - 機密情報の取り扱いと保護に関するガイドライン
-- [GitHub Pages ドキュメント](https://g-kari.github.io/discord-friend/) - 使い方やサーバーの立ち上げ方などの詳細なガイド
-
-### テスト
-
-新機能を追加したり、バグを修正したりする場合は、テストを作成することを推奨します。テストは以下のコマンドで実行できます：
-
+### 開発コマンド
 ```bash
-cd src/bot
-pytest tests/test_*.py
+cd src/bot-go
+
+# 依存関係のインストール
+go mod download
+
+# ホットリロード開発サーバー
+./start_watch.sh
+
+# 直接実行
+go run cmd/bot/main.go
+
+# ビルド
+go build -o discord-bot cmd/bot/main.go
+
+# テスト実行
+go test ./...
+
+# コードフォーマット
+go fmt ./...
+
+# リント（golangci-lintが必要）
+golangci-lint run
 ```
 
-MCP自動接続機能のテスト方法については、[MCP Server Auto-Join Feature - Testing Guide](src/bot/docs/mcp_servers_testing.md) を参照してください。
+### 開発ワークフロー
+1. **開発サーバー起動**: `./start_watch.sh` で自動リロード
+2. **コード変更**: Go コードを編集・保存
+3. **Discord テスト**: Air でボットが自動再起動
+4. **ログ確認**: `logs/bot.log` で詳細デバッグ
+5. **音声テスト**: `/join` で参加後、話すかけるか `/record` で手動録音
+6. **変更コミット**: 頻繁にわかりやすいメッセージでコミット
 
-## セキュリティ対策
+### ログとデバッグ
+```bash
+# 最近の音声関連ログを確認
+tail -100 logs/bot.log | grep -E "(VOICE|OPUS|WAV|WHISPER|VAD)"
+
+# リアルタイムログ監視
+tail -f logs/bot.log
+
+# エラーパターンの確認
+grep -n "ERROR\|FAILED\|❌" logs/bot.log | tail -20
+
+# VAD統計の分析
+grep "VAD Statistics" logs/bot.log
+```
+
+---
+
+## ⚠️ 重要事項
+
+### システム要件
+1. **Go 1.21+** が必要
+2. **libopus-dev** システムパッケージ（gopus用）
+3. **適切な権限** - スクリーンキャプチャに必要
+4. **外部サービス** - AivisSpeech、go-whisper、Ollama
+5. **API キー** - `.env` ファイルに設定（リポジトリにコミットしない）
+
+### パフォーマンス
+- **リアル音声処理**: layeh.com/gopus によるDiscord音声の直接デコード
+- **VAD ログ**: `logs/bot.log` にパケットレベルの詳細デバッグ情報
+- **スレッドセーフ**: 同時録音・再生処理に対応
+
+---
+
+## 🛠️ トラブルシューティング
+
+### 音声関連の問題
+- **音声が認識されない**: `/join` コマンドでボイスチャンネルに参加してから話す
+- **Opus デコードエラー**: gopus ライブラリと libopus-dev の確認
+- **go-whisper API エラー**: go-whisper がポート 8080 で動作していることを確認
+
+### 接続の問題  
+- **ボット反応なし**: ログでUDP接続とreflection警告を確認
+- **ビルドエラー**: 通常はインポートや依存関係の問題、Air の出力を確認
+
+### その他の問題
+1. ボットを再起動する
+2. 依存関係を最新バージョンに更新する
+3. [GitHub Issues](https://github.com/g-kari/discord-friend/issues) で同様の問題を確認する
+
+---
+
+## 🔒 セキュリティ
 
 ### 機密情報の保護
 
-本リポジトリにはAPIキーなどの機密情報が含まれないように注意してください。以下のツールを使用して機密情報の漏洩を防止できます：
+**⚠️ 重要**: APIキーなどの機密情報をリポジトリにコミットしないでください。
 
-- **Git履歴の機密情報チェック**:
-  ```bash
-  python scripts/check_git_secrets.py
-  ```
+```bash
+# Git 履歴の機密情報チェック
+python scripts/check_git_secrets.py
 
-- **pre-commitフックの設定**:
-  ```bash
-  # pre-commitフックを.git/hooksディレクトリにリンク
-  ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
-  ```
+# pre-commit フックの設定
+ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
+```
 
-### 機密情報の管理
+### セキュリティベストプラクティス
+1. **環境変数の使用**: 機密情報は `.env` ファイルに保存
+2. **`.gitignore` 設定**: `.env` ファイルをGit管理対象外に
+3. **サンプル値の使用**: `.env.example` にはサンプル値のみ
+4. **定期ローテーション**: 本番環境のAPIキー定期更新
 
-1. **環境変数の使用**: 機密情報はソースコードではなく環境変数に保存する
-2. **.env ファイルの保護**: .env ファイルを .gitignore に追加して、リポジトリにコミットされないようにする
-3. **サンプル値の使用**: .env.example ファイルにはサンプル値のみを含める
-4. **定期的なローテーション**: 本番環境のAPIキーやトークンは定期的に更新する
-
-### 機密情報の保管場所
-
-1. **開発環境**: 各開発者のローカル環境の `.env` ファイル
-2. **本番環境**: 環境変数またはシークレット管理サービス
-3. **共有が必要な場合**: パスワードマネージャーやセキュアなチャットツールを使用
-
-詳細な使い方と機密情報の管理ベストプラクティスについては、[セキュリティスクリプトのREADME](scripts/README.md)を参照してください。
+詳細は [scripts/README.md](scripts/README.md) を参照してください。
 
 ---
 
-### 参考リンク
+## 📄 ライセンス
 
-- [Discord AI Voice Bot ドキュメント](https://g-kari.github.io/discord-friend/) - 詳細なドキュメントとガイド
-- [Dify公式GitHub](https://github.com/langgenius/dify)
-- [AIAvatarKit公式GitHub](https://github.com/uezo/aiavatarkit)
-- [AivisSpeech公式GitHub](https://github.com/Aivis-Project/AivisSpeech)
-- [OWASP - Secure Coding Practices](https://owasp.org/www-project-secure-coding-practices-quick-reference-guide/)
-- [Git の履歴からセンシティブデータを削除する方法](https://docs.github.com/ja/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)
+このプロジェクトは複数のオープンソースライブラリを使用しています：
+
+- **[discordgo](https://github.com/bwmarrin/discordgo)**: BSD-3-Clause
+- **[gopus](https://github.com/layeh/gopus)**: MPL-2.0  
+- **[AivisSpeech](https://github.com/Aivis-Project/AivisSpeech)**: Apache-2.0
+- **[Ollama](https://ollama.ai)**: MIT
+- **[go-whisper](https://github.com/mutablelogic/go-whisper)**: Apache-2.0
+
+---
+
+## 🔗 参考リンク
+
+### 公式ドキュメント
+- **[Discord Developer Portal](https://discord.com/developers/docs)** - Discord API 公式ドキュメント
+- **[Ollama GitHub](https://github.com/ollama/ollama)** - Ollama 公式リポジトリ
+- **[AivisSpeech GitHub](https://github.com/Aivis-Project/AivisSpeech)** - AivisSpeech 公式リポジトリ
+- **[go-whisper GitHub](https://github.com/mutablelogic/go-whisper)** - go-whisper 公式リポジトリ
+
+### プロジェクトドキュメント
+- **[GitHub Pages](https://g-kari.github.io/discord-friend/)** - 詳細なドキュメントとガイド
+- **[OWASP セキュアコーディング](https://owasp.org/www-project-secure-coding-practices-quick-reference-guide/)** - セキュリティガイドライン
+- **[GitHub セキュリティ](https://docs.github.com/ja/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)** - 機密データ削除方法
+
+---
+
+## 💡 貢献
+
+プロジェクトへの貢献を歓迎します！
+
+1. **Issue 作成**: バグ報告や機能要求は [GitHub Issues](https://github.com/g-kari/discord-friend/issues)
+2. **Pull Request**: コードの改善や新機能の追加
+3. **ドキュメント**: ドキュメントの改善やサンプルの追加
+4. **テスト**: テストケースの追加
+
+詳細な貢献方法については [CLAUDE.md](CLAUDE.md) の「Git Commit Guidelines」を参照してください。

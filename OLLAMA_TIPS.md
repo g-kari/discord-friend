@@ -2,6 +2,13 @@
 
 Ollamaを使ったローカルLLM環境の構築と最適化のための実践的なヒント集です。
 
+> **📚 関連ドキュメント**: 
+> - **[README.md](README.md)** - プロジェクト概要・セットアップ方法
+> - **[CLAUDE.md](CLAUDE.md)** - 技術詳細・開発ガイド
+> - **[scripts/README.md](scripts/README.md)** - 開発支援ツール
+
+---
+
 ## 🚀 Ollamaの利点
 
 ### なぜOllamaが優れているのか
@@ -193,6 +200,8 @@ rm -rf ~/.ollama/models/blobs/
 ```
 
 ## 🎯 Discord Botとの統合最適化
+
+> **💡 統合ガイド**: Discord Bot での Ollama 使用方法は [README.md](README.md) と [CLAUDE.md](CLAUDE.md) を参照してください。
 
 ### 1. 接続プール設定
 ```python
