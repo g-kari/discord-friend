@@ -2,18 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **📚 関連ドキュメント**: 
+> - **[README.md](README.md)** - プロジェクト概要・クイックスタート・基本的な使用方法
+> - **[OLLAMA_TIPS.md](OLLAMA_TIPS.md)** - Ollama の最適化・活用方法
+> - **[scripts/README.md](scripts/README.md)** - 開発支援スクリプトの使用方法
+
+---
+
 ## 🚀 Quick Start
+
+> **💡 ヒント**: 詳細なセットアップ手順は [README.md](README.md) を参照してください。
 
 ```bash
 # 1. Setup Go bot
 cd src/bot-go
 cp .env.example .env
-# Edit .env with your DISCORD_BOT_TOKEN
+# Edit .env with your DISCORD_BOT_TOKEN and other required settings
 
-# 2. Start development mode (auto-restart with Air)
+# 2. Install dependencies  
+go mod download
+sudo apt-get install libopus-dev  # Ubuntu/Debian
+# brew install opus              # macOS
+
+# 3. Start development mode (auto-restart with Air)
 ./start_watch.sh
 
-# 3. Build and run
+# 4. Build and run (production)
 go build -o discord-bot cmd/bot/main.go
 ./discord-bot
 ```
@@ -113,13 +127,17 @@ LOG_LEVEL=INFO
 
 ## External Services
 
+> **⚠️ 重要**: これらの外部サービスを起動してからボットを実行してください。詳細は [README.md](README.md) を参照。
+
 1. **AivisSpeech (VOICEVOX)**: Japanese TTS engine
    - Default port: 50021
    - Required for voice output
+   - Start: `docker run -p 50021:50021 voicevox/voicevox_engine:latest`
 
 2. **Ollama**: Local LLM for AI responses
    - Default port: 11434
    - Optional (can use Dify instead)
+   - Start: `ollama serve && ollama pull qwen2.5:7b`
 
 3. **go-whisper**: Speech recognition using mutablelogic/go-whisper
    - GitHub: https://github.com/mutablelogic/go-whisper
