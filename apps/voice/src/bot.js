@@ -5,6 +5,7 @@ import { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
   AudioPlayerStatus, VoiceConnectionStatus, StreamType, NoSubscriberBehavior } from '@discordjs/voice';
 import { assertWav, boundedBytes, validateSpeech } from './policy.js';
 import { SpeechQueue, readableMessage } from './queue.js';
+import { applyLifetime } from './lifetime.js';
 
 const required = ['DISCORD_BOT_TOKEN', 'DISCORD_GUILD_ID', 'DISCORD_TEXT_CHANNEL_ID', 'DISCORD_OWNER_ID'];
 for (const name of required) if (!process.env[name]) throw new Error(`Missing ${name}`);
@@ -132,5 +133,6 @@ const server = createServer((req, res) => {
 });
 server.listen(8080, '0.0.0.0');
 process.once('SIGTERM', () => { leave(); client.destroy(); server.close(); });
+applyLifetime(() => { leave(); client.destroy(); server.close(); });
 // No automatic command registration: the explicit, separately authorized setup step owns that write.
 await client.login(token);

@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import { createVoiceHandler } from './http.js';
 import { createSynthesizer } from './voicevox.js';
+import { applyLifetime } from './lifetime.js';
 
 const handler = createVoiceHandler(createSynthesizer());
 const server = createServer(async (req, res) => {
@@ -28,3 +29,4 @@ server.maxHeadersCount = 32;
 // Inside the Container only. Cloudflare binding is the trust boundary; no public route is configured.
 server.listen(8080, '0.0.0.0');
 process.once('SIGTERM', () => { server.close(); server.closeIdleConnections(); });
+applyLifetime(() => { server.close(); server.closeAllConnections(); });

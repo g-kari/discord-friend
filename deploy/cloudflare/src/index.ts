@@ -2,10 +2,16 @@ import { Container, getContainer } from '@cloudflare/containers';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 export { ContainerProxy } from '@cloudflare/containers';
 
+function trialActive(env: Env): boolean {
+  const remaining = Date.parse(env.VOICE_DEADLINE) - Date.now();
+  return remaining > 0 && remaining <= 30 * 60 * 1000;
+}
+
 export class Voicevox extends Container<Env> {
   defaultPort = 8080;
   sleepAfter = '2m';
   enableInternet = false;
+  envVars = { VOICE_DEADLINE: this.env.VOICE_DEADLINE };
 }
 
 export class DiscordBot extends Container<Env> {
@@ -20,15 +26,17 @@ export class DiscordBot extends Container<Env> {
     DISCORD_TEXT_CHANNEL_ID: this.env.DISCORD_TEXT_CHANNEL_ID,
     DISCORD_OWNER_ID: this.env.DISCORD_OWNER_ID,
     TTS_URL: 'http://tts.internal/v1/speech',
+    VOICE_DEADLINE: this.env.VOICE_DEADLINE,
   };
   override async onActivityExpired(): Promise<void> {
-    if (String(this.env.BOT_ENABLED) !== 'true') await this.stop();
+    if (String(this.env.BOT_ENABLED) !== 'true' || !trialActive(this.env)) await this.stop();
     // An enabled Gateway client must stay awake even when its HTTP endpoint is idle.
     // Container runtime charges continue while it is awake.
   }
 }
 
 async function speech(request: Request, env: Env): Promise<Response> {
+  if (!trialActive(env)) return Response.json({ error: 'TRIAL_INACTIVE' }, { status: 503 });
   const url = new URL(request.url);
   if (request.method !== 'POST' || url.pathname !== '/v1/speech' || url.search) return new Response(null, { status: 404 });
   try {
@@ -50,7 +58,7 @@ export class VoiceApi extends WorkerEntrypoint<Env> {
 export default {
   fetch(): Response { return new Response(null, { status: 404 }); },
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    if (String(env.BOT_ENABLED) !== 'true') return;
+    if (String(env.BOT_ENABLED) !== 'true' || !trialActive(env)) return;
     if (!env.DISCORD_BOT_TOKEN || ![env.DISCORD_GUILD_ID, env.DISCORD_TEXT_CHANNEL_ID, env.DISCORD_OWNER_ID].every(id => /^\d{17,20}$/.test(id))) {
       console.error(JSON.stringify({ event: 'bot_configuration_missing' }));
       return;

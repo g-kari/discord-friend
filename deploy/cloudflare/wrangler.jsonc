@@ -9,6 +9,7 @@
   "observability": { "enabled": true, "head_sampling_rate": 0.1 },
   "vars": {
     "BOT_ENABLED": "false",
+    "VOICE_DEADLINE": "",
     "DISCORD_GUILD_ID": "",
     "DISCORD_TEXT_CHANNEL_ID": "",
     "DISCORD_OWNER_ID": ""

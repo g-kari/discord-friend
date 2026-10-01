@@ -7,7 +7,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "find src test -name \"*.js\" -exec node --check {} \\;"
+    "check": "node src/check-syntax.js"
   },
   "dependencies": {
     "@discordjs/voice": "0.19.2",
