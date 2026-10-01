@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSynthesizer } from '../src/voicevox.js';
 import { assertWav, boundedBytes, validateSpeech } from '../src/policy.js';
+import { setTimeout as delay } from 'node:timers/promises';
 
 function wav() {
   const b = Buffer.alloc(48);
@@ -76,14 +77,38 @@ test('a busy engine does not queue unbounded text and releases on error', async 
   await assert.rejects(synth({ text: 'third' }), { code: 'VOICEVOX_UNAVAILABLE' });
   assert.equal(count, 2);
 });
-test('caller cancellation propagates and releases the slot', async () => {
-  const engine = fakeEngine({ '/speakers': (_url, init) => new Promise((_resolve, reject) => {
+test('caller cancellation retains admission until non-cancellable engine work finishes', async () => {
+  let release; let engineSignal;
+  const gate = new Promise(resolve => { release = resolve; });
+  const engine = fakeEngine({ '/synthesis': async (_url, init) => {
+    engineSignal = init.signal;
+    await gate;
+    return new Response(wav());
+  } });
+  const controller = new AbortController();
+  const synth = createSynthesizer(engine);
+  const running = synth({ text: 'cancel me' }, controller.signal);
+  while (!engineSignal) await delay(1);
+  controller.abort();
+  assert.equal(engineSignal.aborted, false);
+  await assert.rejects(synth({ text: 'must not overlap' }), { code: 'SYNTHESIS_BUSY' });
+  release();
+  await assert.rejects(running, { code: 'SYNTHESIS_CANCELLED_OR_TIMED_OUT' });
+  assert.equal((await synth({ text: 'after engine completed' })).contentType, 'audio/wav');
+});
+test('engine timeout requests supervised shutdown and never reopens admission', async () => {
+  let shutdowns = 0;
+  const engine = fakeEngine({ '/synthesis': (_url, init) => new Promise((_resolve, reject) => {
     init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
   }) });
-  const controller = new AbortController();
-  const running = createSynthesizer(engine)({ text: 'cancel me' }, controller.signal);
-  controller.abort();
-  await assert.rejects(running, { code: 'SYNTHESIS_CANCELLED_OR_TIMED_OUT' });
+  const synth = createSynthesizer({ ...engine, timeoutMs: 20, onRecycle: () => { shutdowns++; } });
+  // AbortSignal.timeout is unref'ed; this represents the production server's live socket.
+  const hold = setTimeout(() => {}, 1000);
+  try {
+    await assert.rejects(synth({ text: 'slow engine' }), { code: 'SYNTHESIS_CANCELLED_OR_TIMED_OUT' });
+    assert.equal(shutdowns, 1);
+    await assert.rejects(synth({ text: 'must remain closed' }), { code: 'SYNTHESIS_BUSY' });
+  } finally { clearTimeout(hold); }
 });
 test('streaming and declared size bounds cancel upstream', async () => {
   let cancelled = false;
@@ -103,4 +128,35 @@ test('service URL cannot contain credentials or use another protocol', () => {
   for (const baseUrl of ['file:///tmp/audio', 'https://user:password@example.invalid', 'https://example.invalid/?token=secret']) {
     assert.throws(() => createSynthesizer({ baseUrl }));
   }
+});
+
+test('a transport failure during synthesis recycles instead of admitting overlapping CPU work', async () => {
+  let shutdowns = 0;
+  const engine = fakeEngine({ '/synthesis': () => { throw new TypeError('socket lost before response'); } });
+  const synth = createSynthesizer({ ...engine, onRecycle: () => { shutdowns++; } });
+  await assert.rejects(synth({ text: 'uncertain completion' }), { code: 'VOICEVOX_UNAVAILABLE' });
+  assert.equal(shutdowns, 1);
+  await assert.rejects(synth({ text: 'must remain closed' }), { code: 'SYNTHESIS_BUSY' });
+});
+test('hard timeout recycles even when an upstream implementation ignores abort', async () => {
+  let shutdowns = 0;
+  const engine = fakeEngine({ '/synthesis': () => new Promise(() => {}) });
+  const synth = createSynthesizer({ ...engine, timeoutMs: 20, onRecycle: () => { shutdowns++; } });
+  const hold = setTimeout(() => {}, 1000);
+  try {
+    await assert.rejects(synth({ text: 'hung engine' }), { code: 'SYNTHESIS_CANCELLED_OR_TIMED_OUT' });
+    assert.equal(shutdowns, 1);
+    await assert.rejects(synth({ text: 'must remain closed' }), { code: 'SYNTHESIS_BUSY' });
+  } finally { clearTimeout(hold); }
+});
+test('cancellation during query skips synthesis once the query has completed', async () => {
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  const engine = fakeEngine({ '/audio_query': async () => { await gate; return Response.json({ accent_phrases: [] }); } });
+  const synth = createSynthesizer(engine); const controller = new AbortController();
+  const running = synth({ text: 'cancelled query' }, controller.signal);
+  while (engine.calls.length < 2) await delay(1);
+  controller.abort(); release();
+  await assert.rejects(running, { code: 'SYNTHESIS_CANCELLED_OR_TIMED_OUT' });
+  assert.equal(engine.calls.length, 2);
+  assert.equal((await synth({ text: 'next request' })).contentType, 'audio/wav');
 });

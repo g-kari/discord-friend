@@ -32,6 +32,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
       - name: Build private synthesis image
         run: docker build -f apps/voice/Dockerfile.tts -t voice-tts-test .
       - name: Test real synthetic speech with no external network
@@ -49,3 +52,5 @@ jobs:
             sleep 2
           done
           exit 1
+      - name: Verify real in-flight synthesis stops at the absolute trial deadline
+        run: node apps/voice/test/tts-container-deadline.js

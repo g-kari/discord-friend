@@ -4,7 +4,8 @@ import { createVoiceHandler } from './http.js';
 import { createSynthesizer } from './voicevox.js';
 import { applyLifetime } from './lifetime.js';
 
-const handler = createVoiceHandler(createSynthesizer());
+// A socket timeout does not stop VOICEVOX CPU work. Exit and let PID1 hard-kill both children.
+const handler = createVoiceHandler(createSynthesizer({ onRecycle: () => process.exit(1) }));
 const server = createServer(async (req, res) => {
   const controller = new AbortController();
   req.on('aborted', () => controller.abort());
