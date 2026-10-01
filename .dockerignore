@@ -1,0 +1,9 @@
+.git
+**/node_modules
+**/.env
+**/.env.*
+**/.dev.vars*
+**/.wrangler
+**/tmp
+**/logs
+src/bot-go/discord-bot

@@ -1,0 +1,10 @@
+FROM node:24.19.0-bookworm-slim AS node
+FROM voicevox/voicevox_engine:cpu-0.25.2
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY apps/voice/src /app/src
+COPY apps/voice/package.json /app/package.json
+COPY apps/voice/start-tts.sh /app/start-tts.sh
+USER user
+WORKDIR /app
+EXPOSE 8080
+ENTRYPOINT ["/bin/bash", "/app/start-tts.sh"]

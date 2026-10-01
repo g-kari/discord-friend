@@ -1,0 +1,17 @@
+{
+  "name": "discord-friend-cloudflare",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "typescript": "5.9.3",
+    "wrangler": "4.146.0"
+  },
+  "scripts": {
+    "types": "wrangler types",
+    "check": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "discord-friend-voice",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+  "vars": {
+    "BOT_ENABLED": "false",
+    "DISCORD_GUILD_ID": "",
+    "DISCORD_TEXT_CHANNEL_ID": "",
+    "DISCORD_OWNER_ID": ""
+  },
+  "secrets": { "required": ["DISCORD_BOT_TOKEN"] },
+  "containers": [
+    { "class_name": "DiscordBot", "image": "../../apps/voice/Dockerfile.bot", "image_build_context": "../..", "instance_type": "basic", "max_instances": 1 },
+    { "class_name": "Voicevox", "image": "../../apps/voice/Dockerfile.tts", "image_build_context": "../..", "instance_type": "standard-1", "max_instances": 1 }
+  ],
+  "durable_objects": { "bindings": [
+    { "name": "BOT", "class_name": "DiscordBot" },
+    { "name": "VOICEVOX", "class_name": "Voicevox" }
+  ] },
+  "migrations": [{ "tag": "voice-v1", "new_sqlite_classes": ["DiscordBot", "Voicevox"] }],
+  "triggers": { "crons": ["*/5 * * * *"] }
+}
