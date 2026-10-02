@@ -21,7 +21,7 @@ jobs:
           node-version: '24.19.0'
       - run: npm ci --ignore-scripts && npm test && npm run check && npm audit --audit-level=high
         working-directory: apps/voice
-      - run: npm ci --ignore-scripts && npm run types && npm run check && npm audit --audit-level=high
+      - run: npm ci --ignore-scripts && npm run types && npm run check && npm test && npm audit --audit-level=high
         working-directory: deploy/cloudflare
       - name: Build Discord image without connecting an account
         run: docker build -f apps/voice/Dockerfile.bot -t voice-bot-test .

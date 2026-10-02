@@ -12,6 +12,7 @@
   },
   "scripts": {
     "types": "wrangler types",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
   }
 }

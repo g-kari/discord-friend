@@ -12,7 +12,11 @@
     "VOICE_DEADLINE": "",
     "DISCORD_GUILD_ID": "",
     "DISCORD_TEXT_CHANNEL_ID": "",
-    "DISCORD_OWNER_ID": ""
+    "DISCORD_OWNER_ID": "",
+    "DISCORD_APPLICATION_ID": "",
+    "CONFIRM_DISCORD_SETUP": "",
+    "DISCORD_SETUP_OPERATION_ID": "",
+    "DISCORD_SETUP_DEADLINE": ""
   },
   "secrets": { "required": ["DISCORD_BOT_TOKEN"] },
   // Existing scheduler-backed applications remain stopped. A separately reviewed and

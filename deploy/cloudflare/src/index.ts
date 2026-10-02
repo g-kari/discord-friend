@@ -1,5 +1,8 @@
 import { Container, getContainer } from '@cloudflare/containers';
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import { runGuildSetup, SETUP_CONFIRMATION } from './guild-setup';
+import { SqlSetupLedger, saveReadiness } from './setup-ledger';
+import { inspectReadiness, runtimeActive } from './readiness';
 export { ContainerProxy } from '@cloudflare/containers';
 
 function trialActive(env: Env): boolean {
@@ -34,6 +37,15 @@ export class DiscordBot extends Container<Env> {
     // An enabled Gateway client must stay awake even when its HTTP endpoint is idle.
     // Container runtime charges continue while it is awake.
   }
+  async setupGuildCommands() {
+    return runGuildSetup(this.env, new SqlSetupLedger(this.ctx.storage), () => this.ctx.container?.running ?? false);
+  }
+  async checkReadiness() {
+    const snapshot = await inspectReadiness(this.env, request => this.fetch(request));
+    saveReadiness(this.ctx.storage, snapshot);
+    await this.ctx.storage.sync();
+    return snapshot;
+  }
 }
 
 async function speech(request: Request, env: Env): Promise<Response> {
@@ -59,13 +71,19 @@ export class VoiceApi extends WorkerEntrypoint<Env> {
 export default {
   fetch(): Response { return new Response(null, { status: 404 }); },
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    if (String(env.BOT_ENABLED) !== 'true' || !trialActive(env)) return;
-    if (!env.DISCORD_BOT_TOKEN || ![env.DISCORD_GUILD_ID, env.DISCORD_TEXT_CHANNEL_ID, env.DISCORD_OWNER_ID].every(id => /^\d{17,20}$/.test(id))) {
-      console.error(JSON.stringify({ event: 'bot_configuration_missing' }));
+    // A private RPC performs setup without inherited Container fetch/start. The
+    // RPC independently verifies all guards, including actual container.running.
+    if (String(env.CONFIRM_DISCORD_SETUP) === SETUP_CONFIRMATION) {
+      try {
+        const receipt = await env.BOT.getByName('discord-singleton').setupGuildCommands();
+        console.log(JSON.stringify({ event: 'discord_setup_result', receipt }));
+      } catch { console.warn(JSON.stringify({ event: 'discord_setup_guard_rejected' })); }
       return;
     }
-    const response = await getContainer(env.BOT, 'discord-singleton').fetch(new Request('http://bot.internal/health'));
-    if (!response.ok) console.warn(JSON.stringify({ event: 'bot_not_ready' }));
-    await response.body?.cancel();
+    if (!runtimeActive(env)) return;
+    try {
+      const snapshot = await env.BOT.getByName('discord-singleton').checkReadiness();
+      console.log(JSON.stringify({ event: 'discord_gateway_readiness', snapshot }));
+    } catch { console.warn(JSON.stringify({ event: 'discord_gateway_readiness_unavailable' })); }
   },
 } satisfies ExportedHandler<Env>;
