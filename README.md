@@ -2,7 +2,8 @@
 
 > **2026-10-02: Cloudflare向けの共通つむぎTTS・読み上げBotを開発中です。**
 > 新構成は `apps/voice/` と `deploy/cloudflare/` にあり、[構成・移行・検証ゲート](docs/shared-voice-cloudflare.md)を参照してください。
-> まだ実Discord通話・Cloudflareデプロイを検証済みとはしていません。以下は旧Go版の説明です。
+> 停止設定のCloudflare反映と、指定サーバーへの5コマンド登録・読み戻しは確認済みです。
+> コマンド入力時だけ起動するHTTP受付を開発中で、実Discord通話・DAVE/UDP・再生は未検証です。以下は旧Go版の説明です。
 
 ## 📋 目次 (Table of Contents)
 

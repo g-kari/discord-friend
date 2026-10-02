@@ -58,11 +58,11 @@ export class VoiceLifecycle {
     if (this.channelId && channelId !== this.channelId) this.leave();
   }
 
-  async join(resolveChannel) {
+  async join(resolveChannel, externalSignal) {
     if (this.attempt) return 'joining';
     const attempt = { controller: new AbortController(), expectedChannelId: null, confirm: null };
     this.attempt = attempt; // Lock before the first asynchronous member lookup.
-    const signal = AbortSignal.any([attempt.controller.signal, AbortSignal.timeout(this.readyTimeoutMs)]);
+    const signal = AbortSignal.any([attempt.controller.signal, AbortSignal.timeout(this.readyTimeoutMs), ...(externalSignal ? [externalSignal] : [])]);
     let removeAbortListener = () => {};
     try {
       const channel = await abortable(resolveChannel(signal), signal);
