@@ -15,9 +15,11 @@
     "DISCORD_OWNER_ID": ""
   },
   "secrets": { "required": ["DISCORD_BOT_TOKEN"] },
+  // Existing scheduler-backed applications remain stopped. A separately reviewed and
+  // approved native Durable Object policy migration is required before a live trial.
   "containers": [
-    { "class_name": "DiscordBot", "image": "../../apps/voice/Dockerfile.bot", "image_build_context": "../..", "instance_type": "basic", "max_instances": 1 },
-    { "class_name": "Voicevox", "image": "../../apps/voice/Dockerfile.tts", "image_build_context": "../..", "instance_type": "standard-1", "max_instances": 1 }
+    { "name": "discord-friend-voice-discordbot", "class_name": "DiscordBot", "scheduling_policy": "default", "image": "../../apps/voice/Dockerfile.bot", "image_build_context": "../..", "instance_type": "basic", "max_instances": 0 },
+    { "name": "discord-friend-voice-voicevox", "class_name": "Voicevox", "scheduling_policy": "default", "image": "../../apps/voice/Dockerfile.tts", "image_build_context": "../..", "instance_type": "standard-1", "max_instances": 0 }
   ],
   "durable_objects": { "bindings": [
     { "name": "BOT", "class_name": "DiscordBot" },

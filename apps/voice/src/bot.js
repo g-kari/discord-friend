@@ -6,11 +6,10 @@ import { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
 import { assertWav, boundedBytes, validateSpeech } from './policy.js';
 import { SpeechQueue, readableMessage } from './queue.js';
 import { applyLifetime } from './lifetime.js';
+import { assertBotStartup } from './startup-policy.js';
 import { VoiceLifecycle } from './voice-lifecycle.js';
 
-const required = ['DISCORD_BOT_TOKEN', 'DISCORD_GUILD_ID', 'DISCORD_TEXT_CHANNEL_ID', 'DISCORD_OWNER_ID'];
-for (const name of required) if (!process.env[name]) throw new Error(`Missing ${name}`);
-for (const name of required.slice(1)) if (!/^\d{17,20}$/u.test(process.env[name])) throw new Error(`Invalid ${name}`);
+assertBotStartup(process.env);
 const { DISCORD_BOT_TOKEN: token, DISCORD_GUILD_ID: guildId,
   DISCORD_TEXT_CHANNEL_ID: textChannelId, DISCORD_OWNER_ID: ownerId } = process.env;
 const ttsUrl = process.env.TTS_URL ?? 'http://tts.internal/v1/speech';
