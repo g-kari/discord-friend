@@ -27,6 +27,8 @@ jobs:
         run: docker build -f apps/voice/Dockerfile.bot -t voice-bot-test .
       - name: Verify DAVE and Opus dependencies without credentials
         run: docker run --rm --network none voice-bot-test node -e "import('@discordjs/voice').then(v => console.log(v.generateDependencyReport()))"
+      - name: Verify private command ingress and idle shutdown without an account
+        run: docker run --rm --network none -e VOICE_TEST_SOURCE=/app/src -v "$PWD/apps/voice/test/command-container.js:/tests/command-container.js:ro" voice-bot-test node /tests/command-container.js
   voicevox-image:
     runs-on: ubuntu-latest
     timeout-minutes: 25

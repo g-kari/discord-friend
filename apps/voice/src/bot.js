@@ -1,6 +1,5 @@
-import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
-import { Client, Events, GatewayIntentBits, MessageFlags, ChannelType } from 'discord.js';
+import { Client, Events, GatewayIntentBits, ChannelType, PermissionsBitField } from 'discord.js';
 import { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
   AudioPlayerStatus, VoiceConnectionStatus, StreamType, NoSubscriberBehavior } from '@discordjs/voice';
 import { assertWav, boundedBytes, validateSpeech } from './policy.js';
@@ -8,16 +7,18 @@ import { SpeechQueue, readableMessage } from './queue.js';
 import { applyLifetime } from './lifetime.js';
 import { assertBotStartup } from './startup-policy.js';
 import { VoiceLifecycle } from './voice-lifecycle.js';
+import { createCommandService } from './command-service.js';
+import { createCommandServer } from './command-http.js';
 
 assertBotStartup(process.env);
-const { DISCORD_BOT_TOKEN: token, DISCORD_GUILD_ID: guildId,
-  DISCORD_TEXT_CHANNEL_ID: textChannelId, DISCORD_OWNER_ID: ownerId } = process.env;
+const { DISCORD_BOT_TOKEN: token, DISCORD_GUILD_ID: guildId, DISCORD_APPLICATION_ID: applicationId,
+  DISCORD_TEXT_CHANNEL_ID: textChannelId, DISCORD_OWNER_ID: ownerId, VOICE_SESSION_ID: sessionId } = process.env;
 const ttsUrl = process.env.TTS_URL ?? 'http://tts.internal/v1/speech';
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages,
   GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent] });
 const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Stop } });
 let lastError = null;
-let voiceCommandRevision = 0;
+let commandService;
 function recordError(error) {
   lastError = error?.code === 'SYNTHESIS_BUSY' ? 'SYNTHESIS_BUSY' : 'VOICE_OPERATION_FAILED';
   console.error(JSON.stringify({ event: 'voice_error', code: lastError }));
@@ -36,7 +37,8 @@ function pcmFromWav(audio) {
 }
 const queue = new SpeechQueue(async (text, signal) => {
   if (!lifecycle.isReady) throw new Error('Voice not ready');
-  const response = await fetch(ttsUrl, { method: 'POST', headers: { 'content-type': 'application/json' },
+  commandService.touch();
+  const response = await fetch(ttsUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-voice-session-id': sessionId },
     body: JSON.stringify(validateSpeech({ text })), signal: AbortSignal.any([signal, AbortSignal.timeout(45000)]), redirect: 'error' });
   if (!response.ok) { await response.body?.cancel(); throw new Error('Synthesis failed'); }
   const audio = await boundedBytes(response, 24 * 1024 * 1024);
@@ -65,49 +67,44 @@ const lifecycle = new VoiceLifecycle({
 });
 const leave = () => lifecycle.leave();
 
-async function handleInteraction(interaction) {
-  if (!interaction.isChatInputCommand() || !['join', 'leave', 'stop', 'say', 'voice-status'].includes(interaction.commandName)) return;
-  if (interaction.guildId !== guildId || interaction.channelId !== textChannelId || interaction.user.id !== ownerId) {
-    await interaction.reply({ content: 'この操作は指定チャンネルの管理者のみ利用できます', flags: MessageFlags.Ephemeral });
-    return;
-  }
-  const revision = ['join', 'leave'].includes(interaction.commandName) ? ++voiceCommandRevision : null;
-  // Do not let an earlier deferred /join run after a newer /leave was already accepted.
-  if (interaction.commandName === 'leave') leave();
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  try {
-    switch (interaction.commandName) {
+async function dispatchCommand(command, signal) {
+    switch (command.name) {
       case 'join': {
-        if (revision !== voiceCommandRevision) { await interaction.editReply('接続を中止しました'); return; }
         const result = await lifecycle.join(async () => {
-          const member = await interaction.guild.members.fetch(ownerId);
-          const channel = member.voice.channel;
-          return channel?.type === ChannelType.GuildVoice ? channel : null;
-        });
-        await interaction.editReply({
+          const guild = await client.guilds.fetch(guildId);
+          await guild.members.fetch(ownerId);
+          let state;
+          try { state = await guild.voiceStates.fetch(ownerId, { force: true }); }
+          catch (error) { if (error?.status === 404) return null; throw error; }
+          signal.throwIfAborted();
+          const channel = state?.channel;
+          if (channel?.type !== ChannelType.GuildVoice) return null;
+          const me = await guild.members.fetchMe();
+          const permission = channel.permissionsFor(me);
+          if (!permission?.has([PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak])) throw new Error('VOICE_PERMISSION_REQUIRED');
+          signal.throwIfAborted();
+          return channel;
+        }, signal);
+        return { content: {
           joining: '接続中です', cancelled: '接続を中止しました',
           'no-channel': '先に通常のボイスチャンネルへ入ってください',
           joined: '読み上げを開始します（VOICEVOX:春日部つむぎ）。録音はしません',
-        }[result]);
-        break;
+        }[result], joined: result === 'joined' };
       }
-      case 'leave': await interaction.editReply('退出しました'); break;
-      case 'stop': queue.clear(); player.stop(true); await interaction.editReply('読み上げと待ち行列を停止しました'); break;
+      case 'leave': leave(); return { content: '退出しました', joined: false };
+      case 'stop': queue.clear(); player.stop(true); return { content: '読み上げと待ち行列を停止しました', joined: lifecycle.isReady };
       case 'say': {
         if (!lifecycle.isReady) throw new Error('Not connected');
-        const { text } = validateSpeech({ text: interaction.options.getString('text', true) });
-        await interaction.editReply(queue.enqueue(text) ? '読み上げを受け付けました' : '待ち行列が満杯です。少し待ってから再試行してください');
-        break;
+        const { text } = validateSpeech({ text: command.text });
+        return { content: queue.enqueue(text) ? '読み上げを受け付けました' : '待ち行列が満杯です。少し待ってから再試行してください', joined: true };
       }
       case 'voice-status':
-        await interaction.editReply(`音声接続: ${lifecycle.connection?.state.status ?? '未接続'} / 待機: ${queue.items.length} / 直近エラー: ${lastError ?? 'なし'}`);
+        return { content: `音声接続: ${lifecycle.connection?.state.status ?? '未接続'} / 待機: ${queue.items.length} / 直近エラー: ${lastError ?? 'なし'}`, joined: lifecycle.isReady };
     }
-  } catch (error) {
-    recordError(error);
-    await interaction.editReply('処理に失敗しました。音声エンジンと接続状態を確認してください');
-  }
+    throw new Error('UNKNOWN_COMMAND');
 }
-client.on(Events.InteractionCreate, interaction => { void handleInteraction(interaction).catch(recordError); });
+// All five application commands use the Worker's HTTP interaction route. Never
+// install a Gateway interaction listener or acknowledge the same command twice.
 client.on(Events.MessageCreate, message => {
   if (message.guildId !== guildId || message.channelId !== textChannelId || message.author.bot || !lifecycle.channelId ||
       !lifecycle.isReady || message.member?.voice.channelId !== lifecycle.channelId) return;
@@ -116,23 +113,33 @@ client.on(Events.MessageCreate, message => {
   try {
     validateSpeech({ text });
     if (!queue.enqueue(text)) lastError = 'QUEUE_FULL';
+    else commandService.touch();
   } catch { lastError = 'MESSAGE_TOO_LONG'; }
 });
 client.on(Events.VoiceStateUpdate, (_oldState, state) => {
   if (state.guild.id !== guildId) return;
-  if (state.id === client.user?.id) lifecycle.observeBotChannel(state.channelId);
+  if (state.id === client.user?.id) {
+    const hadChannel = Boolean(lifecycle.channelId);
+    lifecycle.observeBotChannel(state.channelId);
+    if (hadChannel && !lifecycle.channelId) commandService.end();
+  }
   if (!lifecycle.channelId) return;
   const channel = state.guild.channels.cache.get(lifecycle.channelId);
-  if (channel?.isVoiceBased() && !channel.members.some(member => !member.user.bot)) leave();
+  if (channel?.isVoiceBased() && !channel.members.some(member => !member.user.bot)) commandService.end();
 });
 client.on(Events.Error, recordError);
-const server = createServer((req, res) => {
-  if (req.method !== 'GET' || req.url !== '/health') { res.writeHead(404).end(); return; }
-  res.writeHead(client.isReady() ? 200 : 503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-  res.end(JSON.stringify({ ready: client.isReady(), voice: lifecycle.connection?.state.status ?? 'disconnected', lastError }));
+const server = createCommandServer(request => commandService.handler(request));
+const shutdown = () => { leave(); client.destroy(); server.close(); setTimeout(() => process.exit(0), 500); };
+commandService = createCommandService({
+  scope: { applicationId, guildId, channelId: textChannelId, userId: ownerId }, sessionId,
+  deadline: Date.parse(process.env.VOICE_DEADLINE), idleSeconds: Number(process.env.VOICE_IDLE_SECONDS),
+  ready: () => client.isReady(), voiceStatus: () => lifecycle.connection?.state.status ?? 'disconnected', queued: () => queue.items.length,
+  dispatch: dispatchCommand, cancelJoin: () => { if (lifecycle.attempt) leave(); }, shutdown,
 });
+setInterval(() => commandService.checkIdle(), 1000).unref();
+client.on(Events.ShardDisconnect, () => commandService.end());
 server.listen(8080, '0.0.0.0');
-process.once('SIGTERM', () => { leave(); client.destroy(); server.close(); });
-applyLifetime(() => { leave(); client.destroy(); server.close(); });
+process.once('SIGTERM', () => commandService.end());
+applyLifetime(() => commandService.end());
 // No automatic command registration: the explicit, separately authorized setup step owns that write.
-await client.login(token);
+try { await client.login(token); } catch { recordError(); commandService.end(); }
