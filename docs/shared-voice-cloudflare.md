@@ -58,6 +58,8 @@ Discordの個別POSTは同名コマンドのupsertで、条件付きcreate-if-ab
 
 次の5分Cronが登録を試みます。1リクエストは5秒、全操作は25秒、JSON応答は64KiB以内に制限し、リダイレクトを拒否します。外部API呼び出し前に `voice_setup_receipts` テーブルへ操作のclaimを永続化します。同じ操作IDは再実行せず、書き込み後の応答が不明な状態は `uncertain` として、新しい操作IDでも自動再試行を拒否します。中断した `pending` も同様です。不確定状態の復旧は、Discordの登録状態を安全に読み戻してから別途明示的に判断します。
 
+Workersでは `redirect: 'manual'` を指定し、3xxは本文を読まず取消して `DISCORD_REDIRECT_REFUSED` で停止します。`Location` のURLへ移動せず、Bot credentialも転送しません。`redirect: 'error'` はworkerdで未対応で、Discordへの最初の通信前に例外となるため使用しません。タイムアウト・取消は `DISCORD_REQUEST_ABORTED`、fetchのTypeErrorは `DISCORD_FETCH_REJECTED`、その他の例外は `DISCORD_REQUEST_FAILED` として記録し、例外メッセージ・URL・ヘッダー・スタックは保存しません。これらのコードだけで鍵が正しいかを判定しません。
+
 Secret、API応答全体、チャンネル本文、アプリ所有者情報を保存・ログ出力しません。保存するのは操作ID、対象Application/Guild、日時、検証済みコマンド名、最後に試みた名前、固定エラーコードだけです。
 
 登録結果はサンプリングされたログの有無で決めません。Cloudflareの認証済みDurable Object SQL APIで、既存BOT namespaceの名前 `discord-singleton` に対して `SELECT operation_id, receipt FROM voice_setup_receipts` を読みます。成功は `state=complete` と5つの `verifiedNames` を確認します。完了確認後は3つの登録用フラグ・操作ID・期限を空へ戻します。これらの手順は実際の反映・登録を承認するまで実行しません。
@@ -65,6 +67,8 @@ Secret、API応答全体、チャンネル本文、アプリ所有者情報を�
 ### Containerの関連付けと接続確認
 
 2026-10-02にIDを設定したAPI由来Worker versionは、直前のWrangler versionと同じscript ETagを持ちますが、`script_runtime.containers` のメタデータを返していません。2アプリの画像・namespaceと上限0は残っています。これは関連付けが実行時に利用できることの証明にはならず、Container SDKは `ctx.container` が無いとconstructorで失敗します。後の登録・ライブ試験前に、レビュー済みコードを完全SHAガード付きの停止設定でWranglerから反映し、対象classとアプリ名の関連付け、同じnamespace、両アプリの上限0・稼働0を読み戻す必要があります。IDのsettings更新だけを反映手順の代わりにしません。
+
+関連付けの復旧を確認した後の登録設定・解除も、WranglerのWorker upload経由で行います。`--containers-rollout=none` は現在のversionからContainerメタデータを継承し、Docker build・image push・アプリのrolloutを省略します。関連付けが欠けたversionに対して、このフラグだけで復旧したことにはしません。設定ファイルにある空のIDは `--keep-vars` 使用時も同名の既存値を上書きするため、承認済みの4つの非Secret IDを `--var` で明示します。登録の有効化・解除では同じIDと停止フラグを維持し、SecretをCLI引数へ渡しません。最終versionの関連付け・ID一致・登録フラグ解除・稼働0を読み戻します。
 
 接続確認RPCは、`BOT_ENABLED=true`、30分以内の有効な `VOICE_DEADLINE`、必要なIDとSecretがそろったときだけBot `/health` を呼びます。この経路はコンテナ起動を伴うため、別途承認された予算・試験時間・起動上限の範囲だけで実行します。停止設定では `/health` を呼びません。結果は `voice_readiness_snapshot` テーブルへ最後の1件だけ保存し、SQL APIで `SELECT snapshot FROM voice_readiness_snapshot WHERE id = 1` を読みます。
 
@@ -93,6 +97,7 @@ Botの常時稼働はメモリ・ディスクの稼働時間分を消費しま�
 - Nodeのユニットテスト: HTTP制限、合成失敗、取消後の合成枠保持、混雑、WAV検査、待ち行列、接続取消・競合を合成データで検証。監督プロセスの期限切れ・合成タイムアウトはSIGTERMを無視するCPU処理中の実サブプロセスで停止を検証。再起動後も元の絶対期限を保持することを確認
 - Worker: Wranglerから型生成しTypeScript検査
 - Worker setup: 実SQLiteの操作claim・再起動・並行呼び出し・不確定書き込みの再試行拒否、モックDiscordのApplication/Channel一致・コマンド衝突・期限切れ・読み戻し・応答上限。実SecretやDiscordへ通信せず検証
+- Worker fetch: 本番と同じcompatibility date / nodejs_compatの実workerdで、実際の登録ヘルパーをbundleして検証。外部通信をすべて合成サービスへ置き換え、5コマンド登録・読み戻しと各種3xxの停止を確認。Nodeだけのfetch mockではWorkers固有のredirect仕様を検証したことにしない
 - Docker build / 実VOICEVOX / Cloudflare上の通信 / 実Discord再生: 別々のゲート。CIの実VOICEVOX期限検証は起動成功、期限直前の合成継続、早すぎない停止、期限後8秒以内の停止を要求する。未実施のものを完了と扱わない
 - スタイル変更・辞書・Webダッシュボード・RSS統合: 後続工程
 
