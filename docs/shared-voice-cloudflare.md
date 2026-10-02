@@ -38,6 +38,38 @@ TTSは同時合成1件、上限30秒、出力24MiB。通常のVOICEVOX合成はH
 Botの待ち行列は再生中を含め10件。500文字を超える通常投稿は無断で切らず読み上げを省略し、状態に表示します。
 音声・本文の永続保存、本文ログ、永続キャッシュは現在ありません。
 
+## 停止中のサーバー限定コマンド登録
+
+登録用Cron経路はBotコンテナを起動しません。既存 `DiscordBot` Durable Objectの専用RPCが、Workerに設定済みのSecret Bindingを内部で使います。鍵の取り出し、シェルへのコピー、新しい公開URLや認証キーの発行は不要です。SDKの `fetch` / `start` やGatewayログインは登録経路から呼びません。実コンテナが稼働中の場合も登録を拒否します。
+
+登録対象は承認済みApplication・Guild・Text Channel・Ownerの組み合わせに固定しています。実IDはWorkerの設定だけに置き、リポジトリにはコロン区切りの4つのIDのSHA-256 fingerprintだけを保存します。別の組み合わせは書き込み前に拒否し、対象の変更にはコードの再レビューが必要です。`GET /applications/@me` で設定済みBot tokenのApplication IDを確認し、チャンネルの所属Guildと種類を確認してから、Guildの既存コマンドを取得します。テストには実IDを使いません。
+
+既存の同名スラッシュコマンドが定義まで一致する場合は書き込みを省略します。取得時は `with_localizations=true` で別言語の定義も確認します。同名で説明・引数・既定権限等が違う場合は、最初の書き込み前に登録全体を停止します。追加は `/join`、`/leave`、`/stop`、`/voice-status`、`/say` の不足分だけを個別POSTします。他のコマンドや同名のコンテキストメニューは残し、Bulk Overwrite・削除・権限上書きは行いません。登録後に5コマンドすべてを再取得して確認します。
+
+Discordの個別POSTは同名コマンドのupsertで、条件付きcreate-if-absentではありません。各POST直前にも再取得して衝突を止めますが、取得からPOSTまでに別の登録処理が同名コマンドを作る競合を完全には防げません。POSTが既存上書きを示すHTTP 200を返した場合は、不確定状態として残りの書き込みを停止します。この時点でDiscord側はすでに1コマンドを上書きしており、元に戻ったという保証はしません。実行中はDeveloper Portal、旧登録スクリプト、他のBot登録処理でこの5つの名前を書き換えないことが前提です。排他的な登録操作を確認できない場合は実行を見送ります。
+
+初期設定では登録を無効にしています。レビュー済みコードの停止状態での反映と、指定Guildへの登録実行が承認された後に限り、次を一度だけ設定します。
+
+- `BOT_ENABLED=false`、`VOICE_DEADLINE=""`、両アプリの `max_instances=0` を維持
+- 既存のGuild・Text Channel・Ownerと確認済みApplication IDを設定
+- `CONFIRM_DISCORD_SETUP=register-guild-commands-v1`
+- `DISCORD_SETUP_OPERATION_ID` に新しいUUID v4
+- `DISCORD_SETUP_DEADLINE` に10分以内の未来の絶対UTC時刻。再起動で延長しない
+
+次の5分Cronが登録を試みます。1リクエストは5秒、全操作は25秒、JSON応答は64KiB以内に制限し、リダイレクトを拒否します。外部API呼び出し前に `voice_setup_receipts` テーブルへ操作のclaimを永続化します。同じ操作IDは再実行せず、書き込み後の応答が不明な状態は `uncertain` として、新しい操作IDでも自動再試行を拒否します。中断した `pending` も同様です。不確定状態の復旧は、Discordの登録状態を安全に読み戻してから別途明示的に判断します。
+
+Secret、API応答全体、チャンネル本文、アプリ所有者情報を保存・ログ出力しません。保存するのは操作ID、対象Application/Guild、日時、検証済みコマンド名、最後に試みた名前、固定エラーコードだけです。
+
+登録結果はサンプリングされたログの有無で決めません。Cloudflareの認証済みDurable Object SQL APIで、既存BOT namespaceの名前 `discord-singleton` に対して `SELECT operation_id, receipt FROM voice_setup_receipts` を読みます。成功は `state=complete` と5つの `verifiedNames` を確認します。完了確認後は3つの登録用フラグ・操作ID・期限を空へ戻します。これらの手順は実際の反映・登録を承認するまで実行しません。
+
+### Containerの関連付けと接続確認
+
+2026-10-02にIDを設定したAPI由来Worker versionは、直前のWrangler versionと同じscript ETagを持ちますが、`script_runtime.containers` のメタデータを返していません。2アプリの画像・namespaceと上限0は残っています。これは関連付けが実行時に利用できることの証明にはならず、Container SDKは `ctx.container` が無いとconstructorで失敗します。後の登録・ライブ試験前に、レビュー済みコードを完全SHAガード付きの停止設定でWranglerから反映し、対象classとアプリ名の関連付け、同じnamespace、両アプリの上限0・稼働0を読み戻す必要があります。IDのsettings更新だけを反映手順の代わりにしません。
+
+接続確認RPCは、`BOT_ENABLED=true`、30分以内の有効な `VOICE_DEADLINE`、必要なIDとSecretがそろったときだけBot `/health` を呼びます。この経路はコンテナ起動を伴うため、別途承認された予算・試験時間・起動上限の範囲だけで実行します。停止設定では `/health` を呼びません。結果は `voice_readiness_snapshot` テーブルへ最後の1件だけ保存し、SQL APIで `SELECT snapshot FROM voice_readiness_snapshot WHERE id = 1` を読みます。
+
+`gateway-ready` はHTTP 200と `client.isReady()` の両方が成功した意味です。ポート応答、スケジューラーのhealthy、ログの欠落をDiscord接続成功として扱いません。この確認も音声UDP/DAVE接続や実再生の証明にはなりません。`/join` はオーナーが明示的に実行したとき、そのオーナーの現在の通常VCだけに接続します。
+
 ## 起動前の承認と検証
 
 1. Workers有料プランはユーザーが契約済みと申告。Containersの従量費用は追加となるため、上限・運用時間を合意してから有効化
@@ -60,6 +92,7 @@ Botの常時稼働はメモリ・ディスクの稼働時間分を消費しま�
 
 - Nodeのユニットテスト: HTTP制限、合成失敗、取消後の合成枠保持、混雑、WAV検査、待ち行列、接続取消・競合を合成データで検証。監督プロセスの期限切れ・合成タイムアウトはSIGTERMを無視するCPU処理中の実サブプロセスで停止を検証。再起動後も元の絶対期限を保持することを確認
 - Worker: Wranglerから型生成しTypeScript検査
+- Worker setup: 実SQLiteの操作claim・再起動・並行呼び出し・不確定書き込みの再試行拒否、モックDiscordのApplication/Channel一致・コマンド衝突・期限切れ・読み戻し・応答上限。実SecretやDiscordへ通信せず検証
 - Docker build / 実VOICEVOX / Cloudflare上の通信 / 実Discord再生: 別々のゲート。CIの実VOICEVOX期限検証は起動成功、期限直前の合成継続、早すぎない停止、期限後8秒以内の停止を要求する。未実施のものを完了と扱わない
 - スタイル変更・辞書・Webダッシュボード・RSS統合: 後続工程
 
@@ -76,3 +109,6 @@ Botの常時稼働はメモリ・ディスクの稼働時間分を消費しま�
 - https://developers.cloudflare.com/containers/configuration/outbound-traffic/
 - https://developers.cloudflare.com/containers/guides/migrate-to-durable-object-scheduling-policy/
 - https://developers.cloudflare.com/containers/platform/pricing/
+- https://docs.discord.com/developers/resources/application#get-current-application
+- https://docs.discord.com/developers/interactions/application-commands#create-guild-application-command
+- https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/
