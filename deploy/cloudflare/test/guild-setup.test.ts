@@ -41,7 +41,7 @@ function discord(initial: unknown[] = []) {
     const method = options?.method ?? 'GET';
     const body = options?.body ? JSON.parse(String(options.body)) : null;
     calls.push({ path, method, body });
-    assert.equal(options?.redirect, 'error'); assert.ok(options?.signal);
+    assert.equal(options?.redirect, 'manual'); assert.ok(options?.signal);
     assert.equal(new Headers(options?.headers).get('authorization'), 'Bot synthetic-test-secret');
     if (path === '/api/v10/applications/@me') return Response.json({ id: SETUP_TARGET.applicationId, private_field: 'discard-me' });
     if (path === `/api/v10/channels/${SETUP_TARGET.textChannelId}`) return Response.json({ id: SETUP_TARGET.textChannelId, guild_id: SETUP_TARGET.guildId, type: 0 });
@@ -187,8 +187,24 @@ test('a stalled response body is cancelled at the request bound', async () => {
   const request: typeof fetch = async () => new Response(new ReadableStream({ cancel() { cancelled = true; } }));
   const started = Date.now();
   const result = await runGuildSetup(environment(), storage().ledger, () => false, request, () => NOW);
-  assert.equal(result.state, 'failed'); assert.equal(cancelled, true);
+  assert.equal(result.state, 'failed'); assert.equal(result.error, 'DISCORD_REQUEST_ABORTED'); assert.equal(cancelled, true);
   assert.ok(Date.now() - started < 7000);
+});
+test('redirects are refused before reading the body and never followed', async () => {
+  for (const status of [301, 302, 303, 307, 308]) {
+    let requested = 0; let pulled = false; let cancelled = false;
+    const response = new Response(new ReadableStream({ pull() { pulled = true; }, cancel() { cancelled = true; } }, { highWaterMark: 0 }), { status, headers: { location: 'https://other.invalid/private?credential=synthetic' } });
+    const result = await runGuildSetup(environment(), storage().ledger, () => false, async () => { requested++; return response; }, () => NOW);
+    assert.equal(result.state, 'failed'); assert.equal(result.error, 'DISCORD_REDIRECT_REFUSED');
+    assert.equal(requested, 1); assert.equal(pulled, false); assert.equal(cancelled, true);
+    assert.doesNotMatch(JSON.stringify(result), /other.invalid|credential=synthetic/);
+  }
+});
+test('adapter errors persist only safe fixed codes, without messages or URLs', async () => {
+  for (const [error, code] of [[new TypeError('secret synthetic-test-secret at https://private.invalid'), 'DISCORD_FETCH_REJECTED'], [new Error('secret synthetic-test-secret at https://private.invalid'), 'DISCORD_REQUEST_FAILED']] as const) {
+    const result = await runGuildSetup(environment(), storage().ledger, () => false, async () => { throw error; }, () => NOW);
+    assert.equal(result.error, code); assert.doesNotMatch(JSON.stringify(result), /synthetic-test-secret|private.invalid/);
+  }
 });
 test('claim persistence failure prevents remote writes', async () => {
   const store = storage(); store.value.sync = async () => { throw new Error('Disk unavailable'); }; const network = discord();

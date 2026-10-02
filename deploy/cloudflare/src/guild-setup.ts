@@ -83,6 +83,7 @@ async function json(response: Response, signal: AbortSignal): Promise<unknown> {
   } catch (error) {
     await reader.cancel().catch(() => {});
     if (error instanceof SetupError) throw error;
+    if (signal.aborted) throw new SetupError('DISCORD_REQUEST_ABORTED');
     throw new SetupError('INVALID_DISCORD_RESPONSE');
   } finally { signal.removeEventListener('abort', abort); reader.releaseLock(); }
 }
@@ -123,10 +124,16 @@ export async function runGuildSetup(env: SetupEnv, ledger: SetupLedger, running:
     const signal = AbortSignal.any([overall, AbortSignal.timeout(Math.max(1, Math.min(5000, remaining)))]);
     try {
       const response = await request(`https://discord.com/api/v10${path}`, {
-        method: body ? 'POST' : 'GET', redirect: 'error', signal,
+        // Workers only implements manual/follow. Inspect 3xx ourselves so the
+        // existing Bot credential can never follow a Location to another host.
+        method: body ? 'POST' : 'GET', redirect: 'manual', signal,
         headers: { authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'content-type': 'application/json' },
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
+      if (response.status >= 300 && response.status < 400) {
+        await response.body?.cancel();
+        throw new SetupError('DISCORD_REDIRECT_REFUSED');
+      }
       // A missing command should be created, not overwrite a competing writer.
       // Discord has already applied an upsert when it returns 200, so preserve
       // uncertainty and stop rather than continue or silently call it success.
@@ -134,6 +141,10 @@ export async function runGuildSetup(env: SetupEnv, ledger: SetupLedger, running:
       return await json(response, signal);
     } catch (error) {
       if (error instanceof SetupError) throw error;
+      // Persist only fixed classifications, never adapter messages, URLs,
+      // headers, credential contents, response bodies or exception stacks.
+      if (signal.aborted) throw new SetupError('DISCORD_REQUEST_ABORTED');
+      if (error instanceof TypeError) throw new SetupError('DISCORD_FETCH_REJECTED');
       throw new SetupError('DISCORD_REQUEST_FAILED');
     }
   }
