@@ -13,8 +13,17 @@
 
 `workers.dev`、Preview URL、公開ルートは無効です。RSSにBindingを設定するまではRSSから利用できません。
 Botは初期状態 `BOT_ENABLED=false`。設定・承認前はCronからも起動しません。
+Botイメージ自体も、明示的な `BOT_ENABLED=true`、30分以内の有効な絶対期限、必要な鍵とIDを確認するまでDiscordクライアントを作成しません。TTSのPID1も、期限を確認するまでエンジンとHTTPアダプターを起動しません。
 現在は短時間検証向けで、空の `VOICE_DEADLINE` も起動を拒否します。承認後の検証では30分以内の絶対時刻を一度だけ設定し、再起動でも延長せずWorkerと両コンテナ内で期限切れを止めます。常設運用は別途承認と設定変更が必要です。
 有効時は5分ごとの確認とアイドル抑止によりGateway接続を維持します。コンテナ停止・再起動時はVCへの自動復帰をせず、再度 `/join` します。
+
+### 現在の安全停止状態とScheduling Policy
+
+既存の2アプリは `scheduling_policy=default` のまま、設定ファイルでも `max_instances=0` に固定しています。Workerのフラグだけではスケジューラーによる準備・起動を防げないため、現時点ではライブ試験を開始できません。アプリ名・Durable Objectクラス・Binding・既存migrationは変更せず、再デプロイでも停止上限0を保持します。
+
+`durable_object` policyへの移行は、既存Container SDKクラスにフラグを追加するだけでは対応できません。既存アプリのpolicyも変更できません。ネイティブAPIへ移した別クラス、別namespace、別アプリを用意し、旧アプリを停止したまま残す承認済みの移行が必要です。実行時にイメージ・インスタンス種類・通信・期限を指定し、Botの必要メモリも測定します。旧 `basic` と同じ種類はネイティブAPIにないため、無断でスペックや費用を変更しません。
+
+ブランチの自動ビルドは現在有効です。新しいコードの公開前に、旧コミットの完全SHAガードを維持して自動デプロイを止め、レビュー済みの新しいコミットに対する手動試験だけを別途承認します。既存アプリの削除、namespace移行、ライブ試験はこの修正だけでは実行しません。
 
 ## 最初の対応範囲
 
@@ -44,7 +53,7 @@ VOICEVOXコンテナのcold start、メモリ使用量、実際の合成速度�
 ## 費用の考え方
 
 Botの常時稼働はメモリ・ディスクの稼働時間分を消費します。VOICEVOXは未使用2分で停止しますが、読み上げの頻度によって稼働時間が延びます。
-無料保証はありません。最大インスタンス数を各1台に制限しても月額の厳密な停止上限にはなりません。
+無料保証はありません。現在の上限は各0台です。承認された試験で将来各1台に制限しても月額の厳密な停止上限にはなりません。
 既存有料プランの同梱枠が他用途で使われている可能性を含めて見積もります。追加予算未承認のままデプロイしません。
 
 ## 検証の区分
@@ -65,4 +74,5 @@ Botの常時稼働はメモリ・ディスクの稼働時間分を消費しま�
 - https://tsumugi-official.studio.site/rule
 - https://developers.cloudflare.com/containers/api/container-class/
 - https://developers.cloudflare.com/containers/configuration/outbound-traffic/
+- https://developers.cloudflare.com/containers/guides/migrate-to-durable-object-scheduling-policy/
 - https://developers.cloudflare.com/containers/platform/pricing/

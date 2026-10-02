@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,31 @@ const deadlineFile = fileURLToPath(new URL('../src/deadline.js', import.meta.url
 const synthesizerUrl = new URL('../src/voicevox.js', import.meta.url).href;
 const idleEngine = 'process.on("SIGTERM", () => {}); setInterval(() => {}, 100);';
 
+test('PID1 rejects missing or invalid deadlines before starting the engine or adapter', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'voice-startup-'));
+  const engineFile = join(directory, 'engine-started');
+  const apiFile = join(directory, 'api-started');
+  const script = shell
+    .replace('/opt/voicevox_engine/run --host 127.0.0.1 --disable_mutable_api', '"$NODE" --input-type=module -e "$MOCK_ENGINE"')
+    .replace('node /app/src/server.js', '"$NODE" --input-type=module -e "$MOCK_API"')
+    .replaceAll('node /app/src/deadline.js', `"$NODE" ${JSON.stringify(deadlineFile)}`);
+  try {
+    for (const value of [undefined, '', 'bad', new Date(Date.now() - 1000).toISOString(), new Date(Date.now() + 31 * 60000).toISOString()]) {
+      const env = {
+        PATH: process.env.PATH, NODE: process.execPath,
+        MOCK_ENGINE: `import {writeFileSync} from "node:fs"; writeFileSync(${JSON.stringify(engineFile)}, "started"); setInterval(() => {}, 100);`,
+        MOCK_API: `import {writeFileSync} from "node:fs"; writeFileSync(${JSON.stringify(apiFile)}, "started"); setTimeout(() => process.exit(1), 100);`,
+      };
+      if (value !== undefined) env.VOICE_DEADLINE = value;
+      const child = spawnSync('bash', ['-c', script], { env, encoding: 'utf8', timeout: 3000 });
+      assert.equal(child.status, 1, child.stderr);
+      assert(child.stderr.includes('trial deadline'), child.stderr);
+      assert.equal(await readFile(engineFile, 'utf8').catch(() => null), null, 'engine must never start');
+      assert.equal(await readFile(apiFile, 'utf8').catch(() => null), null, 'adapter must never start');
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 async function supervisedRun(apiSource, extraEnv = {}, { engineSource = idleEngine, verifyDeadline = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'voice-supervision-'));
   const pidFile = join(directory, 'engine-pid');
@@ -20,11 +45,12 @@ async function supervisedRun(apiSource, extraEnv = {}, { engineSource = idleEngi
   const script = shell
     .replace('/opt/voicevox_engine/run --host 127.0.0.1 --disable_mutable_api', '"$NODE" --input-type=module -e "$MOCK_ENGINE"')
     .replace('node /app/src/server.js', '"$NODE" --input-type=module -e "$MOCK_API"')
-    .replace('node /app/src/deadline.js', `"$NODE" ${JSON.stringify(deadlineFile)}`);
+    .replaceAll('node /app/src/deadline.js', `"$NODE" ${JSON.stringify(deadlineFile)}`);
   const child = spawn('bash', ['-c', script], { env: {
     PATH: process.env.PATH, NODE: process.execPath, PID_FILE: pidFile, READY_FILE: readyFile,
     MOCK_ENGINE: `import {writeFileSync} from "node:fs"; writeFileSync(process.env.PID_FILE, String(process.pid)); ${engineSource}`,
-    MOCK_API: `import {writeFileSync} from "node:fs"; writeFileSync(process.env.READY_FILE, String(process.pid)); ${apiSource}`, ...extraEnv,
+    MOCK_API: `import {writeFileSync} from "node:fs"; writeFileSync(process.env.READY_FILE, String(process.pid)); ${apiSource}`,
+    VOICE_DEADLINE: new Date(Date.now() + 2000).toISOString(), ...extraEnv,
   }, stdio: 'ignore' });
   const startedAt = Date.now();
   let enginePid; let exited = false;
@@ -55,7 +81,7 @@ async function supervisedRun(apiSource, extraEnv = {}, { engineSource = idleEngi
       assert(result.stoppedAt >= deadline - 50, 'supervisor exited before the absolute deadline');
       assert(result.stoppedAt <= deadline + 750, 'supervisor exceeded the absolute deadline tolerance');
     }
-    return result;
+    return { ...result, elapsed: result.stoppedAt - startedAt };
   } finally {
     child.kill('SIGKILL');
     const apiPid = Number(await readFile(readyFile, 'utf8').catch(() => '0'));
@@ -69,6 +95,7 @@ async function supervisedRun(apiSource, extraEnv = {}, { engineSource = idleEngi
 test('adapter failure hard-stops an engine that ignores graceful SIGTERM', async () => {
   const result = await supervisedRun('setTimeout(() => process.exit(1), 200);');
   assert.equal(result.code, 1);
+  assert(result.elapsed >= 200, 'an early startup error must not satisfy the adapter-failure test');
 });
 
 test('synthesis timeout hard-stops actual CPU work even when upstream ignores abort', async () => {
@@ -78,6 +105,7 @@ test('synthesis timeout hard-stops actual CPU work even when upstream ignores ab
     void synth({text:"synthetic timeout"}); setInterval(() => {}, 100);
   `, {}, { engineSource: 'process.on("SIGTERM", () => {}); while (true) {}' });
   assert.equal(result.code, 1);
+  assert(result.elapsed >= 150, 'an early startup error must not satisfy the synthesis-timeout test');
 });
 
 test('independent absolute deadline kills a wedged API and CPU-busy engine', async () => {

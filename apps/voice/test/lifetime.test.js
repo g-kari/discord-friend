@@ -8,5 +8,5 @@ test('trial expiration is absolute across process restarts, bounded and fail clo
   for (const value of ['bad', '2026-10-01T23:59:00Z', '2026-10-02T00:30:01Z']) {
     assert.throws(() => remainingLifetime(value, now));
   }
-  assert.equal(remainingLifetime('', now), null); // isolated no-network CI image test
+  for (const value of ['', undefined, null]) assert.throws(() => remainingLifetime(value, now), /Missing trial deadline/);
 });

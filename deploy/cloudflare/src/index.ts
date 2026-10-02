@@ -21,6 +21,7 @@ export class DiscordBot extends Container<Env> {
   // Actual cloud DAVE/UDP connectivity is an explicit launch gate, not a unit-test claim.
   enableInternet = true;
   envVars = {
+    BOT_ENABLED: this.env.BOT_ENABLED,
     DISCORD_BOT_TOKEN: this.env.DISCORD_BOT_TOKEN,
     DISCORD_GUILD_ID: this.env.DISCORD_GUILD_ID,
     DISCORD_TEXT_CHANNEL_ID: this.env.DISCORD_TEXT_CHANNEL_ID,

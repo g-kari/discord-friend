@@ -1,7 +1,7 @@
 name: Shared voice Cloudflare
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'feat/shared-voice-cloudflare']
     paths: ['apps/voice/**', 'deploy/cloudflare/**', '.dockerignore', '.github/workflows/shared-voice.yml']
   push:
     branches: [main]
@@ -39,7 +39,8 @@ jobs:
         run: docker build -f apps/voice/Dockerfile.tts -t voice-tts-test .
       - name: Test real synthetic speech with no external network
         run: |
-          docker run -d --name voice-tts-test --network none voice-tts-test
+          deadline=$(node -e 'console.log(new Date(Date.now() + 5 * 60 * 1000).toISOString())')
+          docker run -d --name voice-tts-test --network none -e "VOICE_DEADLINE=$deadline" voice-tts-test
           trap 'docker rm -f voice-tts-test >/dev/null 2>&1 || true' EXIT
           for attempt in $(seq 1 60); do
             if docker exec voice-tts-test node --input-type=module -e '
