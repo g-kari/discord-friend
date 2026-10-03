@@ -1,5 +1,7 @@
+import { commandSessionScope, sameSessionScope, scopeKey, type SessionScope } from './scope-policy.ts';
 import type { InteractionCommand } from './interactions';
 import { Buffer } from 'node:buffer';
+import { UsageLedger } from './usage-ledger.ts';
 
 export interface VoiceSession {
   id: string;
@@ -7,6 +9,7 @@ export interface VoiceSession {
   controlId: string;
   deadline: number;
   createdAt: number;
+  scope?: SessionScope;
 }
 export interface StoredJob {
   id: string;
@@ -45,14 +48,17 @@ export async function openCommand(cipher: string, id: string, secret: string,
 
 export class InteractionLedger {
   private storage: SqlStorage;
+  readonly usage: UsageLedger;
   constructor(storage: SqlStorage) {
     this.storage = storage;
+    this.usage = new UsageLedger(storage);
     storage.sql.exec(`CREATE TABLE IF NOT EXISTS voice_interaction_jobs (
       id TEXT PRIMARY KEY, body_hash TEXT NOT NULL, created_at INTEGER NOT NULL,
       payload_expires INTEGER NOT NULL, dedup_expires INTEGER NOT NULL,
       state TEXT NOT NULL, cipher TEXT, session_id TEXT, result TEXT)`);
     storage.sql.exec('CREATE TABLE IF NOT EXISTS voice_command_session (id INTEGER PRIMARY KEY CHECK(id = 1), session TEXT NOT NULL)');
     storage.sql.exec('CREATE TABLE IF NOT EXISTS voice_command_control (id INTEGER PRIMARY KEY CHECK(id = 1), control_id TEXT NOT NULL)');
+    storage.sql.exec('CREATE TABLE IF NOT EXISTS voice_scope_control (scope TEXT PRIMARY KEY, control_id TEXT NOT NULL, expires_at INTEGER NOT NULL)');
     storage.sql.exec('CREATE TABLE IF NOT EXISTS voice_command_limit (id INTEGER PRIMARY KEY CHECK(id = 1), window_ms INTEGER NOT NULL, count INTEGER NOT NULL, last_join INTEGER NOT NULL)');
   }
   sync(): Promise<void> { return this.storage.sync(); }
@@ -63,23 +69,33 @@ export class InteractionLedger {
   setSession(session: VoiceSession): void {
     this.storage.sql.exec('INSERT INTO voice_command_session(id, session) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET session = excluded.session', JSON.stringify(session));
   }
-  private controlId(): string | null {
+  private controlId(command?: InteractionCommand): string | null {
+    if (command) {
+      const stored = this.storage.sql.exec<{ control_id: string }>('SELECT control_id FROM voice_scope_control WHERE scope=?', scopeKey(command)).toArray()[0]?.control_id;
+      const session = this.session();
+      const active = sameSessionScope(session?.scope, command) ? session!.controlId : undefined;
+      return !stored ? active ?? null : active && BigInt(active) > BigInt(stored) ? active : stored;
+    }
     const stored = this.storage.sql.exec<{ control_id: string }>('SELECT control_id FROM voice_command_control WHERE id = 1').toArray()[0]?.control_id;
     const session = this.session()?.controlId;
     return !stored ? session ?? null : session && BigInt(session) > BigInt(stored) ? session : stored;
   }
-  private setControlId(id: string): void {
+  private setControlId(id: string, command?: InteractionCommand): void {
+    if (command) {
+      this.storage.sql.exec('INSERT INTO voice_scope_control(scope, control_id, expires_at) VALUES(?, ?, ?) ON CONFLICT(scope) DO UPDATE SET control_id=excluded.control_id, expires_at=excluded.expires_at', scopeKey(command), id, command.receivedAt + 15 * 60_000); return;
+    }
     this.storage.sql.exec('INSERT INTO voice_command_control(id, control_id) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET control_id = excluded.control_id', id);
   }
-  claimControl(command: InteractionCommand, now: number): { accepted: boolean; session: VoiceSession | null } {
+  claimControl(command: InteractionCommand, now: number, scoped = false): { accepted: boolean; session: VoiceSession | null } {
     this.sweep(now);
     const same = this.storage.sql.exec<{ id: string }>('SELECT id FROM voice_interaction_jobs WHERE id = ?', command.id).toArray()[0];
     let session = this.session();
-    const controlId = this.controlId();
+    if (scoped && session && !sameSessionScope(session.scope, command)) return { accepted: false, session };
+    const controlId = this.controlId(scoped ? command : undefined);
     if (same || (controlId && BigInt(command.id) <= BigInt(controlId))) return { accepted: false, session };
     // Persist priority cancellation even before the first session exists or
     // when bounded dedup metadata is full. Delayed older joins remain cancelled.
-    this.setControlId(command.id);
+    this.setControlId(command.id, scoped ? command : undefined);
     if (session) {
       session = { ...session, controlId: command.id,
         status: command.name === 'leave' || session.status === 'starting' ? 'stopped' : session.status };
@@ -96,12 +112,12 @@ export class InteractionLedger {
   }
   // All related reads/writes are synchronous, before the first await. Replays
   // return the original claim and never create another schedule or speech job.
-  accept(command: InteractionCommand, cipher: string, now: number, deadline: number):
-    { accepted: boolean; reason: 'duplicate' | 'conflict' | 'rate' | 'busy' | 'expired' | 'cancelled' | null; session: VoiceSession | null } {
+  accept(command: InteractionCommand, cipher: string, now: number, deadline: number, daily = false, scoped = false):
+    { accepted: boolean; reason: 'duplicate' | 'conflict' | 'rate' | 'busy' | 'expired' | 'cancelled' | 'budget' | 'cleanup' | 'scope' | null; session: VoiceSession | null } {
     this.sweep(now);
     const same = this.storage.sql.exec<{ body_hash: string }>('SELECT body_hash FROM voice_interaction_jobs WHERE id = ?', command.id).toArray()[0];
     if (same) return { accepted: false, reason: same.body_hash === command.bodyHash ? 'duplicate' : 'conflict', session: this.session() };
-    const controlId = this.controlId();
+    const controlId = this.controlId(scoped ? command : undefined);
     const ordered = !controlId || BigInt(command.id) > BigInt(controlId);
     if (command.name === 'join' && !ordered) return { accepted: false, reason: 'cancelled', session: this.session() };
     if (now - command.receivedAt > 60_000 || command.receivedAt > now + 10_000 || deadline <= now) return { accepted: false, reason: 'expired', session: this.session() };
@@ -112,14 +128,23 @@ export class InteractionLedger {
     if (count >= 10 || (command.name === 'join' && previous && now - previous.last_join < 30_000)) return { accepted: false, reason: 'rate', session: this.session() };
     if (pending >= 8 || this.storage.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM voice_interaction_jobs').one().count >= 256) return { accepted: false, reason: 'busy', session: this.session() };
     let session = this.session();
+    if (scoped && command.name !== 'model' && session && session.status !== 'stopped' && !sameSessionScope(session.scope, command)) return { accepted: false, reason: 'scope', session };
     if (command.name === 'join' && ordered) {
       if (session?.status === 'starting' && session.deadline > now) return { accepted: false, reason: 'busy', session };
       // Every explicit join owns a new process generation. A rejoin within an
       // active session keeps its original absolute cap instead of extending it.
-      const cappedDeadline = session?.status === 'ready' ? Math.min(deadline, session.deadline) : deadline;
-      session = { id: crypto.randomUUID(), status: 'starting', controlId: command.id, deadline: cappedDeadline, createdAt: now };
+      let cappedDeadline = session?.status === 'ready' ? Math.min(deadline, session.deadline) : deadline;
+      const sessionId = crypto.randomUUID();
+      if (daily) {
+        // An old unaccounted/trial generation must finish before switching mode.
+        if (session && session.status !== 'stopped' && !this.usage.covers(session.id, session.deadline, now)) return { accepted: false, reason: 'cleanup', session };
+        const reservation = this.usage.reserve(sessionId, now, cappedDeadline, session?.status === 'ready' ? session.id : undefined);
+        if ('reason' in reservation) return { accepted: false, reason: reservation.reason, session };
+        cappedDeadline = reservation.deadline;
+      }
+      session = { id: sessionId, status: 'starting', controlId: command.id, deadline: cappedDeadline, createdAt: now, ...(scoped ? { scope: commandSessionScope(command) } : {}) };
       this.setSession(session);
-      this.setControlId(command.id);
+      this.setControlId(command.id, scoped ? command : undefined);
     } else if ((command.name === 'leave' || (command.name === 'stop' && session?.status === 'starting')) && session && ordered) {
       session = { ...session, status: 'stopped', controlId: command.id };
       this.setSession(session);
@@ -144,6 +169,7 @@ export class InteractionLedger {
     this.storage.sql.exec('UPDATE voice_interaction_jobs SET state = ?, result = ?, cipher = NULL WHERE id = ?', result, result, id);
   }
   sweep(now: number): void {
+    this.storage.sql.exec('DELETE FROM voice_scope_control WHERE expires_at <= ?', now);
     this.storage.sql.exec("UPDATE voice_interaction_jobs SET state = 'expired', cipher = NULL WHERE payload_expires <= ? AND state = 'accepted'", now);
     this.storage.sql.exec("UPDATE voice_interaction_jobs SET state = 'uncertain', cipher = NULL WHERE payload_expires <= ? AND state = 'executing'", now);
     this.storage.sql.exec('DELETE FROM voice_interaction_jobs WHERE dedup_expires <= ?', now);

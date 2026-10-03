@@ -1,21 +1,23 @@
 export class SpeechQueue {
-  constructor(play, { limit = 10, onError = () => {} } = {}) {
-    this.play = play; this.limit = limit; this.onError = onError;
+  constructor(play, { limit = 10, onError = () => {}, onChange = () => {} } = {}) {
+    this.play = play; this.limit = limit; this.onError = onError; this.onChange = onChange;
     this.items = []; this.current = null; this.running = false;
   }
   enqueue(item) {
     if (this.items.length + Number(this.running) >= this.limit) return false;
     this.items.push(item);
     void this.drain();
+    this.onChange(this.items.length);
     return true;
   }
-  clear() { this.items = []; this.current?.abort(); }
+  clear() { this.items = []; this.current?.abort(); this.onChange(0); }
   async drain() {
     if (this.running) return;
     this.running = true;
     try {
       while (this.items.length) {
         const item = this.items.shift();
+        this.onChange(this.items.length);
         const controller = new AbortController();
         this.current = controller;
         try { await this.play(item, controller.signal); }

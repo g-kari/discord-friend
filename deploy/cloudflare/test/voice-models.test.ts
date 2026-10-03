@@ -46,3 +46,14 @@ test('pages are bounded and malformed or unsafe catalog metadata fails closed', 
   f.db.prepare('UPDATE voice_model_catalog SET catalog=?').run('{invalid'); assert.equal(store.get(), null);
   f.db.close();
 });
+test('explicit same-owner legacy fallback migrates selection and command ordering without deleting old data', async () => {
+  const f = fixture(); const legacy = new OwnerVoiceSelection(f.storage, 'synthetic-legacy');
+  await legacy.command(catalog, { id: id(5), speakerId: 8 }, signal());
+  const migrated = new OwnerVoiceSelection(f.storage, 'synthetic-principal', 'synthetic-legacy');
+  assert.equal(migrated.get(), 8); assert.equal(legacy.get(), 8);
+  assert.match(await migrated.command(catalog, { id: id(4), speakerId: 999 }, signal()), /古い/);
+  await migrated.command(catalog, { id: id(6), speakerId: 999 }, signal());
+  assert.equal(migrated.get(), 999); assert.equal(legacy.get(), 8);
+  assert.equal(new OwnerVoiceSelection(f.storage, 'synthetic-other-principal').get(), undefined);
+  f.db.close();
+});
