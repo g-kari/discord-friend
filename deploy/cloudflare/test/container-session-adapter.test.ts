@@ -28,7 +28,7 @@ const env = {
   DISCORD_BOT_TOKEN: 'synthetic-adapter-worker-secret',
   VOICE_DEADLINE: new Date(NOW + 300_000).toISOString(),
   VOICE_IDLE_SECONDS: '300', VOICE_SESSION_MINUTES: '5',
-  VOICEVOX: { getByName: () => ({ stopSession: async (id: string) => { revokedTts.push(id); } }) },
+  VOICEVOX: { getByName: () => ({ stopSession: async (id: string) => { revokedTts.push(id); }, reconcileExpiredLease: async () => {} }) },
 };
 const sdk = `
   export class Container {
@@ -45,7 +45,8 @@ const sdk = `
       if (this.ctx.pendingStop) { this.ctx.pendingStop = false; await this.onStop(); }
     }
     renewActivityTimeout() {}
-    async schedule() { return {}; }
+    async schedule(time, callback, payload) { this.ctx.schedules.push({ time, callback, payload }); return {}; }
+    async fetch() { this.ctx.starts++; this.ctx.container.running = true; return new Response('inherited start'); }
   }
   export class ContainerProxy {}
 `;
@@ -73,7 +74,7 @@ const { DiscordBot, Voicevox } = await import(`data:text/javascript;base64,${Buf
 function context() {
   const db = new DatabaseSync(':memory:');
   const ctx = {
-    starts: 0, destroys: 0, stops: 0,
+    starts: 0, destroys: 0, stops: 0, schedules: [] as any[],
     pendingStop: false, actualSession: null as string | null, failHealth: false,
     storage: {
       sql: {
@@ -104,6 +105,250 @@ const session = () => ({ id: newId, status: 'starting', controlId: '100000000000
   deadline: NOW + 240_000, createdAt: NOW });
 const speech = () => new Request('http://tts.internal/v1/speech', {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"text":"synthetic"}',
+});
+
+test('production adapters reclaim ended resources without implicit starts', async t => {
+  await t.test('an owned process exit still destroys the owned resource', async () => {
+    const f = context();
+    try {
+      const bot = new DiscordBot(f.ctx, env);
+      bot.commandLedger.setSession({ ...session(), status: 'stopped' });
+      bot.setImageLease(newId);
+      f.ctx.container.running = false;
+      await bot.destroySession(newId);
+      assert.equal(f.ctx.destroys, 1);
+      assert.equal(f.ctx.starts, 0);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('Container fetch cannot implicitly start either application', async () => {
+    for (const Adapter of [DiscordBot, Voicevox]) {
+      const f = context();
+      try {
+        const adapter = new Adapter(f.ctx, env);
+        assert.equal((await adapter.fetch(new Request('http://private.invalid/health'))).status, 404);
+        assert.equal(f.ctx.starts, 0);
+      } finally { f.db.close(); }
+    }
+  });
+
+  await t.test('onStop keeps ownership until cleanup and a delayed cleanup cannot kill a new image', async () => {
+    const f = context();
+    try {
+      const bot = new DiscordBot(f.ctx, env);
+      bot.commandLedger.setSession({ ...session(), id: oldId });
+      bot.setImageLease(oldId);
+      await bot.onStop();
+      assert.equal(bot.imageLease(), oldId);
+      const cleanup = f.ctx.schedules.find(row => row.callback === 'cleanupStoppedImage');
+      assert.ok(cleanup);
+      bot.commandLedger.setSession(session());
+      bot.setImageLease(newId);
+      await bot.cleanupStoppedImage(cleanup.payload);
+      assert.equal(bot.imageLease(), newId);
+      assert.equal(f.ctx.destroys, 0);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('cleanup of the ended image discards its resource even after process exit', async () => {
+    const f = context();
+    try {
+      const bot = new DiscordBot(f.ctx, env);
+      bot.commandLedger.setSession({ ...session(), status: 'stopped' });
+      bot.setImageLease(newId);
+      await bot.cleanupStoppedImage({ sessionId: newId });
+      assert.equal(f.ctx.destroys, 1);
+      assert.equal(bot.imageLease(), null);
+      assert.equal(f.ctx.starts, 0);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('TTS expiry is independently durable and a stale callback preserves an RSS lease', async () => {
+    const f = context();
+    try {
+      const tts = new Voicevox(f.ctx, env);
+      const expired = Date.now() - 1;
+      tts.setLease(newId, expired);
+      const lease = tts.leaseState;
+      await tts.expireSpeechLease({ ...lease, sessionId: oldId });
+      assert.equal(f.ctx.destroys, 0);
+      await tts.expireSpeechLease(lease);
+      assert.equal(f.ctx.destroys, 1);
+      assert.equal(tts.lease, null);
+      assert.equal(tts.revoked(newId), false);
+      tts.setLease('rss-service-binding', Date.now() + 30_000);
+      await tts.reconcileExpiredLease();
+      assert.equal(tts.lease, 'rss-service-binding');
+      assert.equal(f.ctx.destroys, 1);
+      assert.equal(f.ctx.starts, 0);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('the TTS deadline is saved and scheduled before any engine startup', async () => {
+    const f = context();
+    try {
+      const tts = new Voicevox(f.ctx, env);
+      const deadline = Date.now() + 60_000;
+      tts.startAndWaitForPorts = async () => {
+        const expiry = f.ctx.schedules.find(row => row.callback === 'expireSpeechLease');
+        assert.equal(expiry.payload.sessionId, newId);
+        assert.equal(expiry.payload.deadline, deadline);
+        assert.equal(f.db.prepare('SELECT deadline FROM voice_tts_lease').get()?.deadline, deadline);
+        f.ctx.container.running = true;
+      };
+      assert.equal((await tts.scopedSpeech(speech(), newId, deadline)).status, 200);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('expiry preserves a renewed RSS lease for the same reusable identity', async () => {
+    const f = context();
+    try {
+      const tts = new Voicevox(f.ctx, env);
+      const oldDeadline = Date.now() - 1;
+      const newDeadline = Date.now() + 30_000;
+      tts.setLease('rss-service-binding', newDeadline);
+      await tts.expireSpeechLease({ ...tts.leaseState, deadline: oldDeadline });
+      assert.equal(f.ctx.destroys, 0);
+      assert.equal(tts.lease, 'rss-service-binding');
+      assert.equal(tts.revoked('rss-service-binding'), false);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('failed TTS destruction preserves ownership and re-arms a durable deadline', async () => {
+    const f = context();
+    try {
+      const tts = new Voicevox(f.ctx, env);
+      const deadline = Date.now() - 1;
+      tts.setLease(newId, deadline);
+      const lease = tts.leaseState;
+      tts.destroy = async () => { throw new Error('SYNTHETIC_DESTROY_REJECTED'); };
+      await assert.rejects(tts.expireSpeechLease(lease), /VOICE_CLEANUP_UNAVAILABLE/);
+      assert.equal(tts.lease, newId);
+      assert.equal(tts.speechAbort, null);
+      assert.ok(f.ctx.schedules.some(row => row.callback === 'expireSpeechLease' && row.payload.deadline === deadline));
+      tts.destroy = async () => { f.ctx.destroys++; f.ctx.container.running = false; };
+      await tts.expireSpeechLease(lease);
+      assert.equal(tts.lease, null);
+      assert.equal(f.ctx.destroys, 1);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('housekeeping reclaims unleased resources without starting them', async () => {
+    const f = context();
+    try {
+      const bot = new DiscordBot(f.ctx, env);
+      await bot.sweepCommandJobs();
+      assert.equal(f.ctx.destroys, 1);
+      assert.equal(f.ctx.starts, 0);
+      const tts = new Voicevox(f.ctx, env);
+      await tts.reconcileExpiredLease();
+      assert.equal(f.ctx.destroys, 2);
+      assert.equal(f.ctx.starts, 0);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('new speech cannot enter while old lease destruction is awaiting completion', async () => {
+    const f = context();
+    try {
+      const tts = new Voicevox(f.ctx, env);
+      const expired = Date.now() - 1;
+      tts.setLease(oldId, expired);
+      const lease = tts.leaseState;
+      let finishDestroy!: () => void;
+      let entered!: () => void;
+      const destroyEntered = new Promise<void>(resolve => { entered = resolve; });
+      tts.destroy = async () => { await new Promise<void>(resolve => { finishDestroy = resolve; entered(); }); f.ctx.destroys++; };
+      const ending = tts.expireSpeechLease(lease);
+      await destroyEntered;
+      assert.equal((await tts.scopedSpeech(speech(), newId, Date.now() + 30_000)).status, 429);
+      assert.equal(f.ctx.starts, 0);
+      assert.equal(tts.lease, oldId);
+      finishDestroy();
+      await ending;
+      assert.equal(tts.lease, null);
+      assert.equal((await tts.scopedSpeech(speech(), newId, Date.now() + 30_000)).status, 200);
+      assert.equal(tts.lease, newId);
+      assert.equal(f.ctx.starts, 1);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('TTS predecessor stop is reconciled before the next lease is published', async () => {
+    const f = context();
+    try {
+      const tts = new Voicevox(f.ctx, env);
+      tts.setLease(oldId, Date.now() - 1);
+      let observedLease: string | null = null;
+      tts.stop = async () => { observedLease = tts.lease; await tts.onStop(); };
+      assert.equal((await tts.scopedSpeech(speech(), newId, Date.now() + 30_000)).status, 200);
+      assert.equal(observedLease, oldId);
+      const cleanup = f.ctx.schedules.find(row => row.callback === 'cleanupStoppedLease');
+      assert.equal(cleanup.payload.sessionId, oldId);
+      f.ctx.container.running = false;
+      await tts.cleanupStoppedLease(cleanup.payload);
+      assert.equal(tts.lease, newId);
+      assert.equal(f.ctx.destroys, 1, 'only predecessor resource was destroyed');
+    } finally { f.db.close(); }
+  });
+
+  await t.test('a transient failed RSS attempt does not revoke the reusable service identity', async () => {
+    const f = context();
+    try {
+      const tts = new Voicevox(f.ctx, env);
+      const deadline = Date.now() + 30_000;
+      f.ctx.failHealth = true;
+      assert.equal((await tts.scopedSpeech(speech(), 'rss-service-binding', deadline)).status, 503);
+      assert.equal(tts.revoked('rss-service-binding'), false);
+      f.ctx.failHealth = false;
+      assert.equal((await tts.scopedSpeech(speech(), 'rss-service-binding', deadline)).status, 200);
+      assert.equal(tts.lease, 'rss-service-binding');
+    } finally { f.db.close(); }
+  });
+
+  await t.test('failed cleanup cannot destroy a later RSS attempt with the same identity and deadline', async () => {
+    const f = context();
+    try {
+      const tts = new Voicevox(f.ctx, env);
+      const deadline = Date.now() + 30_000;
+      f.ctx.failHealth = true;
+      tts.destroy = async () => { throw new Error('SYNTHETIC_DESTROY_REJECTED'); };
+      assert.equal((await tts.scopedSpeech(speech(), 'rss-service-binding', deadline)).status, 503);
+      const retry = f.ctx.schedules.find(row => row.callback === 'retryFailedLease');
+      assert.ok(retry);
+      f.ctx.failHealth = false;
+      tts.destroy = async () => { f.ctx.destroys++; f.ctx.container.running = false; };
+      assert.equal((await tts.scopedSpeech(speech(), 'rss-service-binding', deadline)).status, 200);
+      const successor = tts.leaseState;
+      assert.notEqual(successor.generation, retry.payload.generation);
+      await tts.retryFailedLease(retry.payload);
+      assert.equal(f.ctx.destroys, 0);
+      assert.equal(f.ctx.container.running, true);
+      assert.deepEqual(tts.leaseState, successor);
+    } finally { f.db.close(); }
+  });
+
+  await t.test('overlapping expiry and stop serialize destruction and hold admission until every cleanup settles', async () => {
+    const f = context();
+    try {
+      const tts = new Voicevox(f.ctx, env);
+      tts.setLease(oldId, Date.now() - 1);
+      const lease = tts.leaseState;
+      let entered!: () => void, finishDestroy!: () => void;
+      const enteredDestroy = new Promise<void>(resolve => { entered = resolve; });
+      let rawDestroys = 0;
+      tts.destroy = async () => { rawDestroys++; await new Promise<void>(resolve => { finishDestroy = resolve; entered(); }); f.ctx.destroys++; };
+      const expiry = tts.expireSpeechLease(lease);
+      await enteredDestroy;
+      const stopping = tts.stopSession(oldId);
+      assert.equal((await tts.scopedSpeech(speech(), newId, Date.now() + 30_000)).status, 429);
+      finishDestroy();
+      await Promise.all([expiry, stopping]);
+      assert.equal(rawDestroys, 1, 'a second destroy cannot resolve first and reopen admission');
+      assert.equal(tts.pendingCleanup, 0);
+      assert.equal(tts.lease, null);
+      assert.equal((await tts.scopedSpeech(speech(), newId, Date.now() + 30_000)).status, 200);
+      assert.equal(tts.lease, newId);
+    } finally { f.db.close(); }
+  });
 });
 
 test('production Container adapter reconciles ownership and persistent TTS revocation offline', async t => {
