@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { GLOBAL_COMMANDS, GLOBAL_INSPECT_ACTION, GLOBAL_REGISTER_ACTION, globalPrincipalFingerprint } from '../src/global-command-setup.ts';
+import { GLOBAL_COMMANDS, GLOBAL_INSPECT_ACTION, GLOBAL_REGISTER_ACTION, GLOBAL_RECOVER_MODEL_ACTION, GLOBAL_MODEL_RECOVERY_ORIGINAL_ID, globalPrincipalFingerprint } from '../src/global-command-setup.ts';
 
 const require = createRequire(import.meta.url);
 const wranglerRequire = createRequire(require.resolve('wrangler/package.json'));
@@ -33,7 +33,7 @@ const COMMAND_PATH = `/api/v10/applications/${APP}/commands`;
 function discord() {
   const commands: Record<string, unknown>[] = [];
   const calls: { path: string; method: string; body: unknown }[] = [];
-  let upsert = false;
+  let upsert = false; let limitModel = false;
   const respond = async (request: Request) => {
     const url = new URL(request.url);
     assert.equal(url.origin, 'https://discord.com');
@@ -45,13 +45,14 @@ function discord() {
     assert.equal(url.pathname, COMMAND_PATH);
     if (request.method === 'GET') return OutboundResponse.json(commands);
     assert.equal(request.method, 'POST');
+    if (limitModel && body.name === 'model') return OutboundResponse.json({ message: 'synthetic rate limit' }, { status: 429 });
     const index = GLOBAL_COMMANDS.findIndex(item => item.name === body.name); assert.ok(index >= 0);
     assert.deepEqual(body, GLOBAL_COMMANDS[index]);
     const created = { ...body, id: String(100000000000000010n + BigInt(index)), version: '100000000000000099', application_id: APP };
     commands.push(created);
     return OutboundResponse.json(created, { status: upsert ? 200 : 201 });
   };
-  return { commands, calls, respond, race: () => { upsert = true; }, posts: () => calls.filter(call => call.method === 'POST') };
+  return { commands, calls, respond, race: () => { upsert = true; }, rateLimitModel: (enabled: boolean) => { limitModel = enabled; }, posts: () => calls.filter(call => call.method === 'POST') };
 }
 
 // A no-start SDK double makes any lifecycle/TCP call fail and records it in
@@ -170,6 +171,40 @@ test('real workerd Cron handler and private RPC register without Container lifec
       const count = net.calls.length;
       for (const path of ['/setupGlobalCommands', '/global-command-setup', '/debug']) assert.equal((await runtime.dispatchFetch(`https://harness.invalid${path}`)).status, 404);
       assert.equal(net.calls.length, count); await snapshot();
+    });
+    await t.test('manual /model recovery uses real Cron/RPC and retains one durable claim across reconstruction', async () => {
+      const previousNet = net; net = discord();
+      const recovered = new Miniflare(convertV4MiniflareOptions({ ...options, bindings: bindings(GLOBAL_INSPECT_ACTION, 20) }));
+      const setup = async (action: string, operation: number, extra = {}) => {
+        await recovered.setOptions(convertV4MiniflareOptions({ ...options, bindings: bindings(action, operation, extra) }));
+      };
+      const tick = async () => { await (await recovered.getWorker()).scheduled({ cron: '*/5 * * * *', scheduledTime: Date.now() }); };
+      const read = async () => {
+        const value = await (await recovered.dispatchFetch('https://harness.invalid/harness/receipt')).json();
+        assert.deepEqual(value.forbidden, []);
+        for (const secret of [TOKEN, KEY, APP, OWNER, RECEIVER, 'never-store-this']) assert.equal(JSON.stringify(value).includes(secret), false);
+        return value;
+      };
+      try {
+        await tick(); net.rateLimitModel(true);
+        await setup(GLOBAL_REGISTER_ACTION, 21, { DISCORD_GLOBAL_SETUP_OPERATION_ID: GLOBAL_MODEL_RECOVERY_ORIGINAL_ID }); await tick();
+        let state = await read(); const original = state.receipts.find((row: any) => row.operationId === GLOBAL_MODEL_RECOVERY_ORIGINAL_ID);
+        assert.equal(original.state, 'uncertain'); assert.equal(original.error, 'DISCORD_RATE_LIMITED');
+        assert.deepEqual(original.createdNames, GLOBAL_COMMANDS.slice(0, 5).map(command => command.name)); assert.equal(net.commands.length, 5);
+        net.rateLimitModel(false); await setup(GLOBAL_INSPECT_ACTION, 22); await tick();
+        await setup(GLOBAL_RECOVER_MODEL_ACTION, 23); await tick();
+        state = await read(); const result = state.receipts.find((row: any) => row.operationId === id(23));
+        assert.equal(result.state, 'complete'); assert.deepEqual(result.createdNames, ['model']); assert.deepEqual(result.verifiedNames, GLOBAL_COMMANDS.map(command => command.name));
+        assert.equal(result.recoveryOf, GLOBAL_MODEL_RECOVERY_ORIGINAL_ID);
+        assert.equal(result.originalReceiptFingerprint, createHash('sha256').update(JSON.stringify(original)).digest('hex'));
+        assert.deepEqual(state.receipts.find((row: any) => row.operationId === GLOBAL_MODEL_RECOVERY_ORIGINAL_ID), original);
+        const count = net.calls.length;
+        await setup(GLOBAL_RECOVER_MODEL_ACTION, 24, { DISCORD_GLOBAL_SETUP_INSPECTION_ID: id(22) }); await tick();
+        await setup(GLOBAL_REGISTER_ACTION, 25, { DISCORD_GLOBAL_SETUP_INSPECTION_ID: id(22) }); await tick();
+        assert.equal(net.calls.length, count); state = await read();
+        assert.equal(state.receipts.some((row: any) => row.operationId === id(24) || row.operationId === id(25)), false);
+        assert.equal(net.posts().filter(call => (call.body as any).name === 'model').length, 2); // Original 429 + one recovery.
+      } finally { await recovered.dispose(); net = previousNet; }
     });
     await t.test('uncertain upsert blocks a new UUID after isolate reconstruction; read-only inspection cannot clear it', async () => {
       net = discord(); await configure(GLOBAL_INSPECT_ACTION, 3); await cron();
