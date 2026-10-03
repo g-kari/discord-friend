@@ -1,0 +1,8 @@
+FROM node:24.19.0-bookworm-slim
+WORKDIR /app
+COPY apps/voice/package*.json ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY apps/voice/src ./src
+USER node
+EXPOSE 8080
+CMD ["node", "src/bot.js"]

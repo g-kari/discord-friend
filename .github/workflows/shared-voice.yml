@@ -1,0 +1,71 @@
+name: Shared voice Cloudflare
+on:
+  pull_request:
+    branches: [main, 'feat/shared-voice-cloudflare']
+    paths: ['apps/voice/**', 'deploy/cloudflare/**', '.dockerignore', '.github/workflows/shared-voice.yml']
+  push:
+    branches: [main]
+    paths: ['apps/voice/**', 'deploy/cloudflare/**', '.dockerignore', '.github/workflows/shared-voice.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - run: npm ci --ignore-scripts && npm test && npm run check && npm audit --audit-level=high
+        working-directory: apps/voice
+      - run: npm ci --ignore-scripts && npm run types && npm run check && npm test && npm audit --audit-level=high
+        working-directory: deploy/cloudflare
+      - name: Build Discord image without connecting an account
+        run: docker build -f apps/voice/Dockerfile.bot -t voice-bot-test .
+      - name: Verify DAVE and Opus dependencies without credentials
+        run: docker run --rm --network none voice-bot-test node -e "import('@discordjs/voice').then(v => console.log(v.generateDependencyReport()))"
+      - name: Verify private command ingress and idle shutdown without an account
+        run: docker run --rm --network none -e VOICE_TEST_SOURCE=/app/src -v "$PWD/apps/voice/test/command-container.js:/tests/command-container.js:ro" voice-bot-test node /tests/command-container.js
+  voicevox-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - name: Build private synthesis image
+        run: docker build -f apps/voice/Dockerfile.tts -t voice-tts-test .
+      - name: Record image layer size without starting another container
+        run: node -e 'const {execFileSync}=require("node:child_process"); const image=JSON.parse(execFileSync("docker",["image","inspect","--format","{\"id\":\"{{.Id}}\",\"layerBytes\":{{.Size}}}","voice-tts-test"],{encoding:"utf8"})); console.log(JSON.stringify({sourceSha:process.env.GITHUB_SHA,image}));'
+      - name: Test real synthetic speech with no external network
+        run: |
+          deadline=$(node -e 'console.log(new Date(Date.now() + 5 * 60 * 1000).toISOString())')
+          docker run -d --name voice-tts-test --network none -e "VOICE_DEADLINE=$deadline" voice-tts-test
+          trap 'docker rm -f voice-tts-test >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 60); do
+            if docker exec -e "VOICE_TEST_ATTEMPT=$attempt" -e "VOICE_TEST_SHA=$GITHUB_SHA" voice-tts-test node --input-type=module -e '
+              import {readFileSync} from "node:fs";
+              const numeric = value => /^\d+$/.test(value.trim()) ? Number(value.trim()) : null;
+              const read = path => { try { return readFileSync(path,"utf8"); } catch { return ""; } };
+              const cpuMicros = () => numeric(read("/sys/fs/cgroup/cpu.stat").match(/^usage_usec\s+(\d+)$/m)?.[1] ?? "");
+              const beforeCpu = cpuMicros(), startedAt = performance.now();
+              const text = "こんにちは。音声テストです。", attempt = Number(process.env.VOICE_TEST_ATTEMPT);
+              console.log(JSON.stringify({event:"tts_profile_attempt",attempt}));
+              const response = await fetch("http://127.0.0.1:8080/v1/speech", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({text,speed:1})});
+              if (!response.ok) process.exit(1);
+              const {assertWav} = await import("/app/src/policy.js");
+              const bytes = new Uint8Array(await response.arrayBuffer()); assertWav(bytes);
+              const afterCpu = cpuMicros(), successfulRequestMs = Math.round(performance.now()-startedAt);
+              const metadata = await fetch("http://127.0.0.1:8080/v1/models").then(result => result.json());
+              const voice = metadata.catalog?.find(value => value.name === "春日部つむぎ" && value.style === "ノーマル");
+              console.log(JSON.stringify({event:"tts_reference_profile", sourceSha:process.env.VOICE_TEST_SHA, format:"PCM16 stereo 48000Hz",bytes:bytes.length,voice:voice??null,text,speed:1,attempts:attempt,successfulSynthesesObserved:1,warmRepeats:0,modelSweepExecuted:false,successfulRequestMs,containerMemoryPeakBytes:numeric(read("/sys/fs/cgroup/memory.peak")),containerCpuMicros:beforeCpu === null || afterCpu === null ? null : afterCpu-beforeCpu,allocation:"unconstrained CI baseline; not Cloudflare latency or billing"}));
+            '; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Verify real in-flight synthesis stops at the absolute trial deadline
+        run: node apps/voice/test/tts-container-deadline.js
