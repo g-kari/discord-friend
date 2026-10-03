@@ -10,7 +10,7 @@ import type { InteractionCommand } from '../src/interactions.ts';
 
 const NOW = Date.parse('2026-10-02T12:00:00Z');
 const env = { BOT_ENABLED: 'true', DISCORD_HTTP_ENABLED: 'true', VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '',
-  VOICE_IDLE_SECONDS: '300', VOICE_SESSION_MINUTES: '30', DISCORD_SCOPE_MODE: 'installed-guilds',
+  VOICE_IDLE_SECONDS: '300', VOICE_SESSION_MINUTES: '480', DISCORD_SCOPE_MODE: 'installed-guilds',
   DISCORD_BOT_TOKEN: 'synthetic_test_secret', DISCORD_APPLICATION_ID: '100000000000000001',
   DISCORD_GUILD_ID: '100000000000000002', DISCORD_TEXT_CHANNEL_ID: '100000000000000003', DISCORD_OWNER_ID: '100000000000000004' };
 const principal = principalFingerprint(env);
@@ -67,7 +67,7 @@ test('simultaneous guild joins reserve/start only one owner session and invalid 
   const f = fixture(); const a = command(2); const b = command(3, 'join', '100000000000000022', '100000000000000023');
   await Promise.all([f.engine.enqueue(a), f.engine.enqueue(b)]);
   assert.equal(f.jobs.length, 1); await f.engine.run(f.jobs[0]);
-  assert.deepEqual(f.calls, ['start', 'join']); assert.equal(f.ledger.usage.remaining(NOW), 30 * 60_000);
+  assert.deepEqual(f.calls, ['start', 'join']); assert.equal(f.ledger.usage.remaining(NOW), 0);
   await f.engine.enqueue(a); assert.equal(f.jobs.length, 1);
   f.db.close();
 });
@@ -104,9 +104,9 @@ test('usage remains aggregate across guilds and reconstruction; cleanup must set
   await f.engine.enqueue(b); assert.equal(f.jobs.length, 1, 'unsettled reservation blocks replacement');
   f.ledger.usage.settle(session.id, NOW + 60_000);
   const reconstructed = new InteractionLedger(f.storage);
-  assert.equal(reconstructed.usage.remaining(NOW + 60_000), 59 * 60_000);
+  assert.equal(reconstructed.usage.remaining(NOW + 60_000), 479 * 60_000);
   await f.engine.enqueue({ ...b, id: command(5).id }); assert.equal(f.jobs.length, 2);
-  assert.equal(f.ledger.usage.remaining(NOW + 60_000), 29 * 60_000); f.db.close();
+  assert.equal(f.ledger.usage.remaining(NOW + 60_000), 0); f.db.close();
 });
 test('installed mode never admits a legacy unscoped session or extends it across modes', () => {
   const f = fixture(); const legacy = { id: '10000000-0000-4000-8000-000000000001', status: 'ready' as const, controlId: command(1).id, createdAt: NOW, deadline: NOW + 60000 };

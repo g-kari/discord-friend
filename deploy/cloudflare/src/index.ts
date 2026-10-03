@@ -7,11 +7,12 @@ import { SqlGlobalSetupLedger } from './global-setup-ledger';
 import { inspectReadiness, runtimeActive } from './readiness';
 import { receiveInteraction, type InteractionCommand } from './interactions';
 import { InteractionLedger, type VoiceSession } from './interaction-ledger';
-import { SessionCommands, commandRuntimeActive, modelMetadataActive, type ContainerCommand, type CommandResult } from './session-commands';
+import { SessionCommands, commandRuntimeActive, modelMetadataActive, type ContainerCommand, type CommandResult, type VoiceSpeechLease } from './session-commands';
 import { privateJson } from './private-http';
 import { commandScopeAllowed, installedScope, principalFingerprint, sameSessionScope, type SessionScope } from './scope-policy';
 import { scopeFingerprint } from './guild-setup';
 import { VoiceCatalogStore, OwnerVoiceSelection, type VoiceModel } from './voice-models';
+import { SESSION_LIMIT_MS, dailySessionBounded } from './usage-ledger';
 export { ContainerProxy } from '@cloudflare/containers';
 
 function trialActive(env: Env): boolean {
@@ -20,10 +21,10 @@ function trialActive(env: Env): boolean {
 }
 function speechDeadlineActive(env: Env, sessionId: string, deadline: number): boolean {
   const remaining = deadline - Date.now();
-  if (!(remaining > 0 && remaining <= 30 * 60_000)) return false;
+  if (!(remaining > 0)) return false;
   // Daily Discord permission does not open or extend the separate RSS service.
-  if (String(env.VOICE_USAGE_MODE) === 'daily' && sessionId !== 'rss-service-binding') return commandRuntimeActive(env);
-  return trialActive(env) && deadline <= Date.parse(env.VOICE_DEADLINE);
+  if (String(env.VOICE_USAGE_MODE) === 'daily' && sessionId !== 'rss-service-binding') return remaining <= SESSION_LIMIT_MS && commandRuntimeActive(env);
+  return remaining <= 30 * 60_000 && trialActive(env) && deadline <= Date.parse(env.VOICE_DEADLINE);
 }
 // Fixed health phases only; never relay free-form Bot data or infer TTS warmth.
 const SPEECH_PHASE_LABELS = Object.freeze({
@@ -75,7 +76,7 @@ export class Voicevox extends Container<Env> {
   private revoke(sessionId: string): void {
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS voice_tts_revoked (session_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)');
     this.ctx.storage.sql.exec('DELETE FROM voice_tts_revoked WHERE expires_at <= ?', Date.now());
-    this.ctx.storage.sql.exec('INSERT INTO voice_tts_revoked(session_id, expires_at) VALUES(?, ?) ON CONFLICT(session_id) DO UPDATE SET expires_at=excluded.expires_at', sessionId, Date.now()+31*60_000);
+    this.ctx.storage.sql.exec('INSERT INTO voice_tts_revoked(session_id, expires_at) VALUES(?, ?) ON CONFLICT(session_id) DO UPDATE SET expires_at=excluded.expires_at', sessionId, Date.now() + SESSION_LIMIT_MS + 60_000);
   }
   private revoked(sessionId: string): boolean {
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS voice_tts_revoked (session_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)');
@@ -109,14 +110,17 @@ export class Voicevox extends Container<Env> {
         // that the underlying resource has been reclaimed by the platform.
         await this.schedule(new Date(Math.ceil(deadline / 1000) * 1000), 'expireSpeechLease', attempt);
         signal.throwIfAborted();
+        const imageEnv: Record<string, string> = { VOICE_DEADLINE: new Date(deadline).toISOString(), VOICE_USAGE_MODE: 'trial', VOICE_SESSION_STARTED_AT: '' };
         if (String(this.env.VOICE_USAGE_MODE) === 'daily') {
           // Independently require the durable Bot reservation before a TTS start.
           const permitted = await this.env.BOT.getByName('discord-singleton').getSpeechLease(sessionId);
-          if (!permitted || permitted.deadline !== deadline) throw new Error('SESSION_STOPPED');
+          if (!permitted || permitted.deadline !== deadline || !dailySessionBounded(permitted.startedAt, deadline, Date.now())) throw new Error('SESSION_STOPPED');
+          imageEnv.VOICE_USAGE_MODE = 'daily';
+          imageEnv.VOICE_SESSION_STARTED_AT = new Date(permitted.startedAt).toISOString();
           signal.throwIfAborted();
         }
         if (this.revoked(sessionId) || !speechDeadlineActive(this.env, sessionId, deadline) || !this.ownsLease(attempt)) throw new Error('SESSION_STOPPED');
-        await this.startAndWaitForPorts({ ports: 8080, startOptions: { envVars: { VOICE_DEADLINE: new Date(deadline).toISOString() } },
+        await this.startAndWaitForPorts({ ports: 8080, startOptions: { envVars: imageEnv },
           cancellationOptions: { abort: signal, instanceGetTimeoutMS: 20_000, portReadyTimeoutMS: 30_000 } });
         signal.throwIfAborted();
         if (!this.ownsLease(attempt) || !speechDeadlineActive(this.env, sessionId, deadline) || this.revoked(sessionId)) throw new Error('SESSION_STOPPED');
@@ -293,6 +297,8 @@ export class DiscordBot extends Container<Env> {
           DISCORD_GUILD_ID: scope.guildId, DISCORD_TEXT_CHANNEL_ID: scope.channelId,
           DISCORD_OWNER_ID: this.env.DISCORD_OWNER_ID, TTS_URL: 'http://tts.internal/v1/speech',
           VOICE_DEADLINE: new Date(session.deadline).toISOString(), VOICE_IDLE_SECONDS: this.env.VOICE_IDLE_SECONDS,
+          VOICE_USAGE_MODE: this.env.VOICE_USAGE_MODE || 'trial',
+          VOICE_SESSION_STARTED_AT: new Date(String(this.env.VOICE_USAGE_MODE) === 'daily' ? this.commandLedger.usage.reservation()!.started_at : session.createdAt).toISOString(),
         } } }); }
       catch { await this.destroy().catch(() => {}); throw new Error('GATEWAY_START_FAILED'); }
       const until = Math.min(Date.now() + 20_000, session.deadline);
@@ -368,8 +374,9 @@ export class DiscordBot extends Container<Env> {
     if (!session) { await this.destroy(); return; }
     try {
       const snapshot = await this.snapshot();
-      if (this.commands.speechLease(session.id) && snapshot?.sessionId === session.id && snapshot.voice === 'ready' &&
-          typeof snapshot.idleAt === 'number' && snapshot.idleAt > Date.now()) { this.renewActivityTimeout(); return; }
+      if (this.commands.speechLease(session.id) && snapshot?.sessionId === session.id && snapshot.ready === true && snapshot.voice === 'ready' &&
+          snapshot.deadline === session.deadline && typeof snapshot.idleAt === 'number' && Number.isFinite(snapshot.idleAt) &&
+          snapshot.idleAt > Date.now() && snapshot.idleAt <= session.deadline) { this.renewActivityTimeout(); return; }
     } catch { /* Fail closed without raw exception data. */ }
     await this.commands.stopped(session.id);
     await this.destroySession(session.id);
@@ -434,7 +441,7 @@ export class DiscordBot extends Container<Env> {
     });
     await this.env.VOICEVOX.getByName('shared-voicevox').reconcileExpiredLease();
   }
-  async getSpeechLease(sessionId: string): Promise<VoiceSession | null> { return this.commands.speechLease(sessionId); }
+  async getSpeechLease(sessionId: string): Promise<VoiceSpeechLease | null> { return this.commands.speechLease(sessionId); }
   async getSpeechModel(sessionId: string, authorId: string): Promise<number | undefined> {
     if (!this.commands.speechLease(sessionId) || authorId !== this.env.DISCORD_OWNER_ID) return undefined;
     return this.ownerModel.get();

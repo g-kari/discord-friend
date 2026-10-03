@@ -14,28 +14,30 @@
 2026-10-03の承認された短時間試験では、元の実装 `f80d1c5245f2a62cd9e2313248f0f5bec0a99dd9` のHTTPコマンドからGateway/VC接続がreadyになり、ユーザーが実際の読み上げを聞いたことを確認しました。試験後は両コンテナの上限・desired/runningが0、両instanceが停止していることを読み戻しました。指定サーバー限定の `/join`、`/leave`、`/stop`、`/voice-status`、`/say` の登録・Discordからの読み戻しも完了しています。このブランチの追加修正はまだ反映・実聴取していません。RSSにBindingを設定するまではRSSから利用できません。
 
 リポジトリの初期構成は `BOT_ENABLED=false`、HTTP受付も `DISCORD_HTTP_ENABLED=false`。公開鍵は空で、公開URLも無効です。Cronはジョブ掃除と既存コンテナの観察だけを行い、停止中のコンテナを起動しません。
-Botイメージ自体も、明示的な `BOT_ENABLED=true`、HTTPコマンド経路、UUIDのセッションID、30分以内の有効な絶対期限、承認済み固定スコープのfingerprint、必要な鍵とIDを確認するまでDiscordクライアントを作成しません。TTSのPID1も、期限を確認するまでエンジンとHTTPアダプターを起動しません。SDKの既定起動環境は停止設定と空の期限で、検証済みのセッションだけが起動時の環境を渡します。
+Botイメージ自体も、明示的な `BOT_ENABLED=true`、HTTPコマンド経路、UUIDのセッションID、modeに応じた有効な絶対期限、承認済みスコープのfingerprint、必要な鍵とIDを確認するまでDiscordクライアントを作成しません。TTSのPID1も、期限を確認するまでエンジンとHTTPアダプターを起動しません。SDKの既定起動環境は停止設定と空の期限で、検証済みのセッションだけが起動時の環境を渡します。
 既定の `VOICE_USAGE_MODE=trial` は短時間検証向けで、空の `VOICE_DEADLINE` も起動を拒否します。承認後の検証では30分以内の絶対時刻を一度だけ設定し、再起動でも延長せずWorkerと両コンテナ内で期限切れを止めます。常設運用は別途承認と設定変更が必要です。
 `/join` でBotを起動し、Gatewayが準備できた後でオーナーの現在の通常VCを確認します。VCのView Channel・Connect・Speak権限を確認し、明示コマンドによってだけ接続します。VOICEVOXは最初の合成時に起動します。停止中の `/leave`、`/stop`、`/voice-status`、`/say` はBot/TTSを起こしません。再起動後のVC自動復帰も行いません。
 
 無操作は既定5分です。受け付けた `/join`・`/say`・`/stop`、読み上げ対象の投稿、次の待ち音声の処理が活動となり、`/voice-status`、監視用のhealth取得やVoice Stateイベントは期限を延ばしません。`/leave`、無人退出、Botの切断、起動失敗、アイドル・絶対期限では両コンテナを停止します。`/stop` は接続中の音声と待ち行列を止め、接続自体はアイドル期限まで保持します。再度の `/join` は新しいプロセス世代を持ち、稼働中の元の絶対期限を延長しません。Cold start中の再joinは重ねて起動せず、先に終了または退出を待ちます。
 
-### 日常利用向けの利用時間枠（コードのみ、既定は無効）
+日次modeでは、接続中のVCに人がいることを新しいREST応答で確認できた場合も、5分のアイドル期限を更新します。確認は期限の15秒前から、通常は約4分45秒ごとに行い、Bot自身と同じVCの人1人を確認した時点で終了します。キャッシュは候補選びだけに使い、1回の確認は合計5秒・最大4回のREST呼び出し（Botと人の候補3人）です。SDK内部の再試行にも同じ中断signalを渡します。音声の受信・録音、他のVCの調査や参加履歴の保存は行いません。退出・再join・Gateway切断・対象VCの参加者変更後に返った古い応答は期限を延ばせません。エラー時は延長せず、最後に設定された期限で停止します。無人化はVoice Stateイベントで停止し、イベントを受け取れない場合も現在の5分枠を超えて保持しません。`/stop` 後も人の確認が続く間は接続を保持しますが、絶対期限と日次枠は延長しません。trialではこの在室確認による延長を行いません。
 
-明示的な `VOICE_USAGE_MODE=daily` は、既存の固定Application・Guild・Text Channel・Ownerだけに日常利用を許可する別モードです。`BOT_ENABLED=true`、HTTP受付、同じ署名検証・fingerprint・Secretに加え、`VOICE_IDLE_SECONDS=300`、`VOICE_SESSION_MINUTES=30`、Worker側の `VOICE_DEADLINE=""` をすべて要求します。不明なmodeや中途半端な設定では起動しません。リポジトリの初期値は引き続きtrial、Bot無効、両上限0です。このコード変更は有効化・起動・費用の承認を含みません。
+### 日常利用向けの利用時間枠（既定は無効）
 
-- 無操作5分、1セッション最大30分、同一UTC暦日の合計60分。UTC 0時に日付が変わります。日付境界をまたぐセッションはUTC 0時で終了し、自動延長・翌日の自動起動をしません。
-- 署名済みの明示 `/join` を既存DOでclaimするとき、当日の残り枠・30分・UTC日付境界の最小値をSQLへ先に予約します。job/予約の永続化と期限scheduleが完了するまで外部起動をしません。Bot起動直前とTTS起動直前にも予約を確認します。
+明示的な `VOICE_USAGE_MODE=daily` は、固定Application・Ownerと設定されたscope（`pinned` または `installed-guilds`）に日常利用を許可する別モードです。`BOT_ENABLED=true`、HTTP受付、同じ署名検証・fingerprint・Secretに加え、`VOICE_IDLE_SECONDS=300`、`VOICE_SESSION_MINUTES=480`、Worker側の `VOICE_DEADLINE=""` をすべて要求します。不明なmodeや中途半端な設定では起動しません。リポジトリの初期値は引き続きtrial、Bot無効、両上限0です。有効化後は `/join` 自体でBotが起動し、最初の読み上げでTTSが起動します。
+
+- 無操作5分、1セッション最大8時間、同一UTC暦日の合計8時間。UTC 0時に日付が変わります。日付境界をまたぐセッションはUTC 0時で終了し、自動延長・翌日の自動起動をしません。
+- 署名済みの明示 `/join` を既存DOでclaimするとき、当日の残り枠・8時間・UTC日付境界の最小値をSQLへ先に予約します。job/予約の永続化と期限scheduleが完了するまで外部起動をしません。Bot起動直前とTTS起動直前にも予約を確認します。
 - 利用時間は受付時刻から数える保守的な経過時間で、cold start・待ち時間・停止処理も含みます。音声の長さやContainerごとのCPU利用時間ではありません。
 - Bot resourceのdestroyと、そのセッションのTTS停止/revocationが成功した後だけ未使用分を返します。プロセス終了通知、health失敗、destroy要求だけでは返しません。停止完了が不明な間は全予約を保持し、期限切れや日付変更後も次の新規joinを止めます。掃除が期限後に完了した場合は全予約分を消費します。SQL/保存の部分障害も過少計上より過大予約を優先します。
 - 同じinteractionの重複は予約・起動を繰り返しません。接続中のrejoinは予約の所有世代だけを変更し、元の開始時刻・絶対期限・予約量を維持します。古いcleanupは新しい世代の枠を返せません。DO/Botの再起動や再デプロイでも日別の累計を消しません。SQL履歴と既存DO namespaceを維持することが運用条件です。
-- 1回30分を2回使えば当日の枠は終了します。早期に停止を確認できれば残り時間で追加の明示joinができます。残りが30分未満なら、その残り時間でセッションを短縮します。`/voice-status` は起動せず、当日の「未予約枠」を分単位の切り捨てで表示します。稼働中の残り予約は未予約枠に含みません。
+- 1回8時間、または複数回の合計8時間で当日の枠は終了します。早期に停止を確認できれば残り時間で追加の明示joinができます。残りが8時間未満なら、その残り時間でセッションを短縮します。`/voice-status` は起動せず、当日の「未予約枠」を分単位の切り捨てで表示します。稼働中の残り予約は未予約枠に含みません。
 - オーナー限定なのはslash操作です。通常投稿は従来どおり指定テキストチャンネルの同じVC参加者が対象で、他の参加者の読み上げをオーナー限定には変えません。オーナーの声選択、他の参加者の既定の声も維持します。
 - RSSのService Bindingにdaily権限を広げません。RSSは従来の短期trial期限が必要です。dailyの空のWorker期限ではRSS経由の合成を受け付けません。
 
 これは利用受付時間の上限であり、金額・月額請求・プラットフォーム停止遅延の厳密な上限ではありません。BotとTTSは別resourceで、監視・Worker・ストレージ・既存の他用途や停止処理遅延も請求へ影響し得ます。追加費用の承認と実際の稼働0の読み戻しは別に必要です。
 
-反映するときは、稼働0・上限0・既存namespace・image digest・完全source SHAを先に確認します。この変更はWorkerのみで、Containerイメージ・依存関係・Discord登録定義を変えません。既存イメージがこの基準版と一致することを確認した上で、既存関連付けを保つWorker-only uploadを使います。停止状態の署名PING・拒否・model確認後、承認されたdaily設定と各上限1だけを有効化します。明示join・5分idle・30分上限・複数回合計60分・再構築・UTC境界・cleanup失敗時の拒否・実resource停止を個別に実測するまで、本番検証済みとは扱いません。停止時はBot無効と両上限0を読み戻し、利用履歴やnamespaceを消しません。
+反映するときは、稼働0・上限0・既存namespace・image digest・完全source SHAを先に確認します。8時間対応にはWorkerとBot・TTS両イメージの更新が必要です。両イメージは明示的な `VOICE_USAGE_MODE=daily`、永続予約の開始時刻 `VOICE_SESSION_STARTED_AT`、固定の `VOICE_DEADLINE` を要求し、開始から最大8時間・UTC日付境界以内を独立に検証します。再joinや再起動で開始時刻・期限を延長せず、不明mode・欠落・期限切れ・未来開始を拒否します。trialの30分上限と停止中の既定値は維持します。TTS取消記録は最大セッション時間を超える8時間1分保持します。停止状態の署名PING・拒否・model確認後、承認されたdaily設定と各上限1だけを有効化します。明示join・5分idle・8時間上限・複数回合計8時間・再構築・UTC境界・cleanup失敗時の拒否・実resource停止を個別に実測するまで、本番検証済みとは扱いません。停止時はBot無効と両上限0を読み戻し、利用履歴やnamespaceを消しません。
 
 ### 現在の安全停止状態とScheduling Policy
 
@@ -146,7 +148,7 @@ Secret、API応答全体、チャンネル本文、アプリ所有者情報を�
 
 今回のBotイメージ変更を初めて反映するときは、停止上限0のまま通常のWrangler deployでDocker build・registry push・既存アプリのimage更新も行う必要があります。`--containers-rollout=none` の設定変更だけでは、以前のGateway版イメージは置き換わりません。新しい停止版とimage digestを確認した後のフラグ変更・終了処理で、この省略フラグを使います。
 
-接続確認RPCは、`BOT_ENABLED=true`、30分以内の有効な `VOICE_DEADLINE`、必要なIDとSecretがそろい、コンテナが既にrunningの場合だけBot `/health` を直接観察します。停止中は起動せず503の観察結果となり、停止設定では `/health` を呼びません。結果は `voice_readiness_snapshot` テーブルへ最後の1件だけ保存し、SQL APIで `SELECT snapshot FROM voice_readiness_snapshot WHERE id = 1` を読みます。起動経路は署名検証済みの明示 `/join` です。
+接続確認RPCは、`BOT_ENABLED=true`、trialでは30分以内の有効な `VOICE_DEADLINE`、dailyでは8時間以内の既存セッション期限、必要なIDとSecretがそろい、コンテナが既にrunningの場合だけBot `/health` を直接観察します。停止中は起動せず503の観察結果となり、停止設定では `/health` を呼びません。結果は `voice_readiness_snapshot` テーブルへ最後の1件だけ保存し、SQL APIで `SELECT snapshot FROM voice_readiness_snapshot WHERE id = 1` を読みます。起動経路は署名検証済みの明示 `/join` です。
 
 `gateway-ready` はHTTP 200と `client.isReady()` の両方が成功した意味です。ポート応答、スケジューラーのhealthy、ログの欠落をDiscord接続成功として扱いません。この確認も音声UDP/DAVE接続や実再生の証明にはなりません。`/join` はオーナーが明示的に実行したとき、そのオーナーの現在の通常VCだけに接続します。
 
@@ -208,7 +210,7 @@ Botの常時稼働はメモリ・ディスクの稼働時間分を消費しま�
 - Bot/Ownerのチャンネル閲覧、Ownerのコマンド利用、VC接続とBotの発言権限を確認します。必要権限の自動追加、thread参加、インストール、履歴検索、Gateway intent追加はしません。`/say` はOwnerが接続中VCにいることを対象者のfresh voice-state取得で確認してからqueueに入れます。
 - 稼働セッションは全サーバー合計1つです。使用中の別guild・別text channelへのjoinはbusyとなり、接続を移しません。別scopeのstop/leave/say/statusは、そのセッション・watermark・予算・queueを変更しません。移動は使用中チャンネルで `/leave` 後に新しい場所で `/join` します。
 - 各プロセス世代のscopeをimage leaseに永続化し、終了時は現在の設定でなく破棄対象のscopeでshutdownします。scopeのない旧世代はinstalled modeで再利用せず回収してから新規起動します。control metadataは15分で掃除し、live sessionの順序watermarkは維持します。
-- 日次modeの合計60分、1回30分、無操作5分の予約・確定は同じsingleton DOに残るため、guildを変えても予算は増えません。起動失敗や再起動を含む保守的な時間予約であり、通貨建ての請求上限ではありません。RSSの利用範囲は変えません。
+- 日次modeの合計8時間、1回8時間、無操作5分の予約・確定は同じsingleton DOに残るため、guildを変えても予算は増えません。起動失敗や再起動を含む保守的な時間予約であり、通貨建ての請求上限ではありません。RSSの利用範囲は変えません。
 - Ownerが選んだ声は同じApplication＋Ownerの範囲で共有し、旧固定scopeの声とcommand順序を非破壊移行します。他の参加者は既定のVOICEVOX:春日部つむぎを使います。
 - installed modeのBot presenceは全guildに見えるため、「起動中／音声準備中／読み上げ中／待機中」のみ表示します。待ち件数、本文、話者、guild/channel、失敗詳細は表示しません。詳しい状態は認可された元interactionのephemeral応答と同じセッションscopeの `/voice-status` に限定します。
 

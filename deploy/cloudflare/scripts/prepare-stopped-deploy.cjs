@@ -20,11 +20,11 @@ function hex(value, length, label) {
 }
 
 function parseInputs(args, accountId) {
-  assert.equal(args.length, 7, 'Expected: TREE PUBLIC_KEY TTS_DIGEST APPLICATION_ID GUILD_ID TEXT_CHANNEL_ID OWNER_ID');
+  assert.equal(args.length, 7, 'Expected: TREE PUBLIC_KEY TTS_DIGEST_OR_build APPLICATION_ID GUILD_ID TEXT_CHANNEL_ID OWNER_ID');
   const [tree, publicKey, ttsDigest, ...ids] = args;
   hex(tree, 40, 'Expected tree');
   hex(publicKey, 64, 'Discord public key');
-  hex(ttsDigest, 64, 'TTS digest');
+  if (ttsDigest !== 'build') hex(ttsDigest, 64, 'TTS digest or literal build');
   hex(accountId, 32, 'Cloudflare account ID');
   for (const id of ids) {
     assert.match(id, /^[1-9]\d{16,19}$/, 'Discord IDs must be decimal snowflakes');
@@ -62,14 +62,23 @@ function createStoppedConfig(sourceText, inputs) {
     DISCORD_APPLICATION_ID: inputs.ids[0], DISCORD_GUILD_ID: inputs.ids[1],
     DISCORD_TEXT_CHANNEL_ID: inputs.ids[2], DISCORD_OWNER_ID: inputs.ids[3],
   });
+  if (inputs.ttsDigest === 'build') {
+    Object.assign(config.vars, {
+      VOICE_USAGE_MODE: 'daily', DISCORD_SCOPE_MODE: 'installed-guilds',
+      VOICE_IDLE_SECONDS: '300', VOICE_SESSION_MINUTES: '480',
+    });
+  }
   for (const key of Object.keys(config.vars)) {
     if (key.startsWith('DISCORD_GLOBAL_SETUP_') || key.startsWith('DISCORD_SETUP_') || key === 'CONFIRM_DISCORD_SETUP') config.vars[key] = '';
   }
   for (const container of config.containers) container.max_instances = 0;
-  const tts = config.containers.find(container => container.class_name === 'Voicevox');
-  tts.image = `registry.cloudflare.com/${inputs.accountId}/${tts.name}@sha256:${inputs.ttsDigest}`;
-  // Wrangler accepts the existing image_build_context and ignores it for a
-  // registry image. Preserve it, names, bindings, migrations and secret names.
+  if (inputs.ttsDigest !== 'build') {
+    const tts = config.containers.find(container => container.class_name === 'Voicevox');
+    tts.image = `registry.cloudflare.com/${inputs.accountId}/${tts.name}@sha256:${inputs.ttsDigest}`;
+  }
+  // Literal build retains both reviewed Dockerfiles and their build contexts.
+  // Digest mode retains the TTS context too; Wrangler ignores it for a registry
+  // image. Preserve names, bindings, migrations and secret names in both modes.
   return config;
 }
 

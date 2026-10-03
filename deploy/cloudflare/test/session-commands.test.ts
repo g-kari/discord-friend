@@ -6,6 +6,7 @@ import { InteractionLedger, sealCommand, openCommand } from '../src/interaction-
 import { SessionCommands, commandRuntimeActive, modelMetadataActive } from '../src/session-commands.ts';
 import type { InteractionCommand } from '../src/interactions.ts';
 import { APPROVED_SCOPE_FINGERPRINT } from '../src/guild-setup.ts';
+import { createCommandService } from '../../../apps/voice/src/command-service.js';
 import { APPROVED_BOT_SCOPE } from '../../../apps/voice/src/startup-policy.js';
 
 const NOW = Date.parse('2026-10-02T12:00:00Z');
@@ -305,4 +306,36 @@ test('model jobs alone stay available with disabled or expired voice runtime wit
   for (const patch of [{ DISCORD_HTTP_ENABLED: 'false' }, { DISCORD_BOT_TOKEN: '' }, { DISCORD_OWNER_ID: '100000000000000099' }]) {
     assert.equal(modelMetadataActive({ ...env, ...patch }, scopeFingerprint(env)), false);
   }
+});
+
+test('a full private command cache reports busy through the Worker without tearing down the ready session', async () => {
+  let now = NOW, dispatched = 0;
+  const image = createCommandService({
+    scope: { applicationId: env.DISCORD_APPLICATION_ID, guildId: env.DISCORD_GUILD_ID,
+      channelId: env.DISCORD_TEXT_CHANNEL_ID, userId: env.DISCORD_OWNER_ID },
+    sessionId: SID, deadline: NOW + 30 * 60_000, ready: () => true, voiceStatus: () => 'ready', queued: () => 0,
+    dispatch: async () => { dispatched++; return { content: 'image response', joined: true }; },
+    cancelJoin: () => {}, shutdown: () => {}, now: () => now,
+  });
+  const invoke = async (value: unknown) => {
+    const response = await image.handler(new Request('http://bot.internal/v1/command', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) }));
+    if (!response.ok) throw new Error('PRIVATE_COMMAND_FAILED');
+    return await response.json();
+  };
+  for (let n = 1; n <= 256; n++) {
+    const { token, receivedAt, bodyHash, ...value } = command(n, 'voice-status');
+    await invoke({ ...value, sessionId: SID });
+  }
+  const f = fixture({ invoke }); f.ready();
+  try {
+    const before = f.ledger.session();
+    await f.engine.enqueue(command(300)); await f.engine.run(snowflake(300));
+    assert.match(f.replyContents.at(-1)!, /混み合/);
+    assert.deepEqual(f.ledger.session(), before); assert.deepEqual(f.calls, []); assert.equal(dispatched, 256);
+    now += 15 * 60_000; f.setNow(now); image.touch();
+    await f.engine.enqueue(command(301, 'say', now)); await f.engine.run(snowflake(301));
+    assert.equal(f.replyContents.at(-1), 'image response');
+    assert.deepEqual(f.ledger.session(), before); assert.deepEqual(f.calls, []); assert.equal(dispatched, 257);
+  } finally { f.db.close(); }
 });

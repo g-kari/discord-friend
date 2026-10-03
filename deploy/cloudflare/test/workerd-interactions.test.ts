@@ -123,6 +123,7 @@ const harness = `
     }
     configure(value) { Object.assign(this.fixture, value); }
     clock(value) { clock = value; }
+    async endSession() { const session = this.commandLedger.session(); await this.commands.stopped(session.id); await this.destroySession(session.id); }
     reconstructedTake(id) { return new InteractionLedger(this.ctx.storage).take(id, Date.now()); }
   }
   export class TestVoicevox extends Voicevox {}
@@ -139,6 +140,7 @@ const harness = `
         else if (path === '/test/run') await bot.runCommandJob(value);
         else if (path === '/test/sweep') await bot.sweepCommandJobs();
         else if (path === '/test/take') return Response.json(await bot.reconstructedTake(value.id));
+        else if (path === '/test/end-session') await bot.endSession();
         else if (path === '/test/expire') await bot.expireCommandSession(value);
         return Response.json({ completed: true });
       }
@@ -237,7 +239,7 @@ const rows = (state: any) => (state.tables.voice_interaction_jobs ?? [])
 const jobs = (state: any) => state.fixture.schedules.filter((item: any) => item.method === 'runCommandJob');
 
 test('installed-guild workerd routing keeps signed guild scopes and global daily usage isolated', async () => {
-  const f = await runtime(await bundle(), { DISCORD_SCOPE_MODE: 'installed-guilds', VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '' });
+  const f = await runtime(await bundle(), { DISCORD_SCOPE_MODE: 'installed-guilds', VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '', VOICE_SESSION_MINUTES: '480' });
   const dynamic = (n: number, name: string, guild = '100000000000000012', channel = '100000000000000013') => ({
     ...payload(n, name), guild_id: guild, channel_id: channel, channel: { id: channel, type: 0 }, context: 0,
     member: { user: { id: scope.DISCORD_OWNER_ID }, permissions: String((1n << 10n) | (1n << 31n)) },
@@ -477,9 +479,9 @@ test('production interactions use real workerd Ed25519, SQLite and intercepted o
 });
 
 test('daily admission cumulatively caps repeated explicit sessions using real workerd SQLite', async () => {
-  const f = await runtime(await bundle(), { VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '' });
+  const f = await runtime(await bundle(), { VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '', VOICE_SESSION_MINUTES: '480' });
   try {
-    for (const [n, elapsed] of [[2, 0], [3, 30 * 60_000], [4, 60 * 60_000]]) {
+    for (const [n, elapsed] of [[2, 0], [3, 4 * 60 * 60_000], [4, 8 * 60 * 60_000]]) {
       const now = NOW + elapsed;
       await f.admin('clock', { now });
       const request = await signed(payload(n, 'join'), String(now / 1000));
@@ -489,20 +491,20 @@ test('daily admission cumulatively caps repeated explicit sessions using real wo
       await until(f.inspect, state => state.ingressLookups === (n - 1) * 2);
       if (n < 4) {
         const state = await until(f.inspect, state => jobs(state).length === n - 1);
-        assert.equal(state.tables.voice_usage_days[0].charged_ms, (n - 1) * 30 * 60_000);
+        assert.equal(state.tables.voice_usage_days[0].charged_ms, 8 * 60 * 60_000);
         assert.equal(state.fixture.starts, n - 2, 'budget debit exists before external startup');
         await f.admin('run', { id: snowflake(n) });
         assert.equal((await f.inspect()).session.status, 'ready');
-        await f.admin('clock', { now: now + 30 * 60_000 });
-        await f.admin('expire', { sessionId: state.session.id });
+        await f.admin('clock', { now: now + 4 * 60 * 60_000 });
+        await f.admin('end-session');
         assert.equal((await f.inspect()).tables.voice_usage_reservation[0].state, 'settled');
       } else {
         await until(f.inspect, state => state.ingressLookups === 6 && f.outbound.length >= 4);
         const state = await f.inspect();
         assert.equal(state.fixture.starts, 2); assert.equal(state.running, false);
-        assert.equal(state.tables.voice_usage_days[0].charged_ms, 60 * 60_000);
+        assert.equal(state.tables.voice_usage_days[0].charged_ms, 8 * 60 * 60_000);
         assert.equal(jobs(state).length, 2);
-        assert.match(JSON.stringify(f.outbound.at(-1)?.body), /60分/);
+        assert.match(JSON.stringify(f.outbound.at(-1)?.body), /8時間/);
       }
     }
   } finally { await f.mf.dispose(); }

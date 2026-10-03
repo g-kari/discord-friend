@@ -1,4 +1,4 @@
-import { Client, Events, GatewayIntentBits, ChannelType, PermissionsBitField } from 'discord.js';
+import { Client, Events, GatewayIntentBits, ChannelType, PermissionsBitField, Routes } from 'discord.js';
 import { joinVoiceChannel, createAudioPlayer, entersState,
   VoiceConnectionStatus, NoSubscriberBehavior } from '@discordjs/voice';
 import { validateSpeech } from './policy.js';
@@ -12,6 +12,7 @@ import { VoiceLifecycle } from './voice-lifecycle.js';
 import { createCommandService } from './command-service.js';
 import { createCommandServer } from './command-http.js';
 import { assertChannelAccess, assertVoiceAccess, authorizeSpeechCaller } from './channel-access.js';
+import { createVoiceOccupancy } from './voice-occupancy.js';
 
 assertBotStartup(process.env);
 const { DISCORD_BOT_TOKEN: token, DISCORD_GUILD_ID: guildId, DISCORD_APPLICATION_ID: applicationId,
@@ -23,9 +24,11 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Stop } });
 let lastError = null;
 let commandService;
+let occupancy;
+let gatewayReady = false;
 const presence = new StatusPresence({ publish: value => client.user.setPresence(value), available: () => client.isReady(), generic: installed });
 const speechStatus = new SpeechStatus(value => presence.update(value));
-client.on(Events.ClientReady, () => speechStatus.emit());
+client.on(Events.ClientReady, () => { gatewayReady = true; speechStatus.emit(); });
 function recordError(error) {
   lastError = error?.code === 'SYNTHESIS_BUSY' ? 'SYNTHESIS_BUSY' : 'VOICE_OPERATION_FAILED';
   console.error(JSON.stringify({ event: 'voice_error', code: lastError }));
@@ -38,7 +41,7 @@ const queue = new SpeechQueue(createSpeechPlayback({
 }), { onError: recordError, onChange: count => speechStatus.waiting(count) });
 
 const lifecycle = new VoiceLifecycle({
-  clearSpeech: () => { speechStatus.stop(); queue.clear(); player.stop(true); },
+  clearSpeech: () => { occupancy?.invalidate(); speechStatus.stop(); queue.clear(); player.stop(true); },
   onReady: candidate => candidate.subscribe(player),
   connect: channel => {
     const candidate = joinVoiceChannel({ channelId: channel.id, guildId,
@@ -53,11 +56,12 @@ const lifecycle = new VoiceLifecycle({
   },
   waitReady: (candidate, signal) => entersState(candidate, VoiceConnectionStatus.Ready, signal),
 });
-const leave = () => { lifecycle.leave(); speechStatus.transport('disconnected'); };
+const leave = () => { occupancy?.invalidate(); lifecycle.leave(); speechStatus.transport('disconnected'); };
 
 async function dispatchCommand(command, signal) {
     switch (command.name) {
       case 'join': {
+        occupancy?.invalidate();
         const statusJoin = lifecycle.attempt ? null : speechStatus.join();
         let result;
         try { result = await lifecycle.join(async () => {
@@ -129,30 +133,47 @@ client.on(Events.MessageCreate, message => {
     else commandService.touch();
   } catch (error) { lastError = ['TEXT_PERMISSION_REQUIRED', 'VOICE_PERMISSION_REQUIRED'].includes(error?.code) ? error.code : 'MESSAGE_TOO_LONG'; }
 });
-client.on(Events.VoiceStateUpdate, (_oldState, state) => {
+client.on(Events.VoiceStateUpdate, (oldState, state) => {
   if (state.guild.id !== guildId) return;
+  const currentChannel = lifecycle.channelId;
+  if (oldState.channelId !== state.channelId &&
+      (state.id === client.user?.id || (currentChannel && [oldState.channelId, state.channelId].includes(currentChannel)))) occupancy?.invalidate();
   if (state.id === client.user?.id) {
     const hadChannel = Boolean(lifecycle.channelId);
     lifecycle.observeBotChannel(state.channelId);
     if (hadChannel && !lifecycle.channelId) commandService.end();
   }
-  if (!lifecycle.channelId) return;
+  if (!lifecycle.channelId || ![oldState.channelId, state.channelId].includes(lifecycle.channelId)) return;
   const channel = state.guild.channels.cache.get(lifecycle.channelId);
-  if (channel?.isVoiceBased() && !channel.members.some(member => !member.user.bot)) commandService.end();
+  if (channel?.isVoiceBased() && !channel.members.some(member => member.user.bot === false)) commandService.end();
 });
 client.on(Events.Error, recordError);
 const server = createCommandServer(request => commandService.handler(request));
-const shutdown = () => { speechStatus.end(); leave(); presence.close(); client.destroy(); server.close(); setTimeout(() => process.exit(0), 500); };
+const shutdown = () => { occupancy?.close(); speechStatus.end(); leave(); presence.close(); client.destroy(); server.close(); setTimeout(() => process.exit(0), 500); };
 commandService = createCommandService({
   scope: { applicationId, guildId, channelId: textChannelId, userId: ownerId }, sessionId,
+  usageMode: process.env.VOICE_USAGE_MODE, startedAt: Date.parse(process.env.VOICE_SESSION_STARTED_AT),
   deadline: Date.parse(process.env.VOICE_DEADLINE), idleSeconds: Number(process.env.VOICE_IDLE_SECONDS),
-  ready: () => client.isReady(), voiceStatus: () => lifecycle.connection?.state.status ?? 'disconnected', queued: () => queue.items.length, speechPhase: () => speechStatus.phase,
+  ready: () => gatewayReady && client.isReady(), voiceStatus: () => lifecycle.connection?.state.status ?? 'disconnected', queued: () => queue.items.length, speechPhase: () => speechStatus.phase,
   dispatch: dispatchCommand, cancelJoin: () => { if (lifecycle.attempt) leave(); }, shutdown,
 });
-setInterval(() => commandService.checkIdle(), 1000).unref();
-client.on(Events.ShardReconnecting, () => speechStatus.transport('reconnecting'));
-client.on(Events.ShardResume, () => { if (!lifecycle.attempt) speechStatus.transport(lifecycle.isReady ? 'ready' : 'disconnected'); });
-client.on(Events.ShardDisconnect, () => commandService.end());
+occupancy = createVoiceOccupancy({
+  usageMode: process.env.VOICE_USAGE_MODE, sessionId, guildId, deadline: Date.parse(process.env.VOICE_DEADLINE),
+  state: () => ({ sessionId, guildId, selfId: client.user?.id, channelId: lifecycle.channelId,
+    connection: lifecycle.connection, gatewayReady: gatewayReady && client.isReady(), voiceReady: lifecycle.isReady, idleAt: commandService.idleAt }),
+  candidates: () => {
+    const channel = client.guilds.cache.get(guildId)?.channels.cache.get(lifecycle.channelId);
+    return channel?.type === ChannelType.GuildVoice ? [...channel.members.values()].map(member => ({
+      id: member.id, guildId: member.guild.id, channelId: member.voice.channelId, bot: member.user.bot,
+    })) : [];
+  },
+  fetchVoiceState: (userId, signal) => client.rest.get(Routes.guildVoiceState(guildId, userId), { signal }),
+  touch: () => commandService.touch(),
+});
+setInterval(() => { if (!commandService.checkIdle()) void occupancy.tick(); }, 1000).unref();
+client.on(Events.ShardReconnecting, () => { gatewayReady = false; occupancy.invalidate(); speechStatus.transport('reconnecting'); });
+client.on(Events.ShardResume, () => { gatewayReady = true; if (!lifecycle.attempt) speechStatus.transport(lifecycle.isReady ? 'ready' : 'disconnected'); });
+client.on(Events.ShardDisconnect, () => { gatewayReady = false; commandService.end(); });
 server.listen(8080, '0.0.0.0');
 process.once('SIGTERM', () => commandService.end());
 applyLifetime(() => commandService.end());

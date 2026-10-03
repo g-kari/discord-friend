@@ -122,3 +122,24 @@ test('restart preserves the original absolute deadline rather than granting anot
   const result = await supervisedRun('setInterval(() => {}, 100);', { VOICE_DEADLINE: deadline }, { verifyDeadline: true });
   assert.equal(result.code, 1);
 });
+
+test('TTS watchdog validates daily eight-hour bounds before engine startup', () => {
+  const start = Date.parse('2026-10-03T08:00:00Z'), deadline = start + 8 * 60 * 60_000;
+  const entrypoint = `Date.now = () => ${start}; process.argv[2] = '--check'; await import(${JSON.stringify(new URL('../src/deadline.js', import.meta.url).href)});`;
+  const args = ['--input-type=module', '-e', entrypoint];
+  const env = { PATH: process.env.PATH, VOICE_USAGE_MODE: 'daily', VOICE_SESSION_STARTED_AT: new Date(start).toISOString(),
+    VOICE_DEADLINE: new Date(deadline).toISOString() };
+  assert.equal(spawnSync(process.execPath, args, { env, timeout: 3000 }).status, 0);
+  for (const patch of [{ VOICE_SESSION_STARTED_AT: '' }, { VOICE_USAGE_MODE: 'trial' },
+    { VOICE_DEADLINE: new Date(deadline + 1).toISOString() }]) {
+    assert.equal(spawnSync(process.execPath, args, { env: { ...env, ...patch }, timeout: 3000 }).status, 1);
+  }
+});
+test('daily TTS supervisor stops at its original absolute deadline', async () => {
+  const deadline = Date.now() + 1000;
+  const result = await supervisedRun('setInterval(() => {}, 100);', {
+    VOICE_USAGE_MODE: 'daily', VOICE_SESSION_STARTED_AT: new Date(Math.max(Math.floor(deadline / 86400000) * 86400000, deadline - 8 * 60 * 60_000)).toISOString(),
+    VOICE_DEADLINE: new Date(deadline).toISOString(),
+  }, { verifyDeadline: true });
+  assert.equal(result.code, 1);
+});

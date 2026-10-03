@@ -1,3 +1,4 @@
+import { SESSION_LIMIT_MS } from './usage-ledger.ts';
 export interface RuntimeEnv {
   BOT_ENABLED: string;
   VOICE_USAGE_MODE?: string;
@@ -54,7 +55,7 @@ export async function inspectReadiness(env: RuntimeEnv, request: (request: Reque
     } finally { await reader.cancel().catch(() => {}); signal.removeEventListener('abort', abort); reader.releaseLock(); }
     if (typeof health !== 'object' || health === null || !('ready' in health) || typeof health.ready !== 'boolean') throw new Error('Invalid health response');
     if (env.VOICE_USAGE_MODE === 'daily') {
-      if (!('deadline' in health) || typeof health.deadline !== 'number' || health.deadline <= now() || health.deadline > now() + 30 * 60_000) throw new Error('Invalid session deadline');
+      if (!('deadline' in health) || typeof health.deadline !== 'number' || health.deadline <= now() || health.deadline > now() + SESSION_LIMIT_MS) throw new Error('Invalid session deadline');
       snapshot.deadline = new Date(health.deadline).toISOString();
     }
     snapshot.state = response.status === 200 && health.ready ? 'gateway-ready' : response.status === 503 && !health.ready ? 'gateway-not-ready' : 'unavailable';

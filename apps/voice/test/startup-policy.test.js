@@ -59,3 +59,15 @@ test('actual Bot entrypoint stops before client creation for disabled or unbound
     assert(!child.stderr.includes(valid.DISCORD_BOT_TOKEN), 'startup errors must not print credentials');
   }
 });
+
+test('Bot independently admits a bounded eight-hour daily session and retains the five-minute idle guard', () => {
+  const daily = { ...valid, VOICE_USAGE_MODE: 'daily', VOICE_SESSION_STARTED_AT: new Date(now).toISOString(),
+    VOICE_DEADLINE: new Date(now + 8 * 60 * 60_000).toISOString() };
+  assert.equal(assertBotStartup(daily, now), 8 * 60 * 60_000);
+  assert.equal(assertBotStartup(daily, now + 7 * 60 * 60_000), 60 * 60_000);
+  for (const patch of [{ VOICE_SESSION_STARTED_AT: '' }, { VOICE_IDLE_SECONDS: '301' },
+    { VOICE_USAGE_MODE: 'trial' }, { VOICE_USAGE_MODE: 'other' },
+    { VOICE_DEADLINE: new Date(now + 8 * 60 * 60_000 + 1).toISOString() }]) {
+    assert.throws(() => assertBotStartup({ ...daily, ...patch }, now));
+  }
+});

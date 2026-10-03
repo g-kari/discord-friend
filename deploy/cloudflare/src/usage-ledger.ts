@@ -1,9 +1,15 @@
 // Time admission is intentionally not a currency/billing cap. Charge the whole
 // possible lifetime before startup; return unused time only after both owned
 // resources have been reclaimed. The UTC day boundary never extends a session.
-export const DAILY_LIMIT_MS = 60 * 60_000;
-export const SESSION_LIMIT_MS = 30 * 60_000;
+export const DAILY_LIMIT_MS = 8 * 60 * 60_000;
+export const SESSION_LIMIT_MS = 8 * 60 * 60_000;
 const DAY_MS = 24 * 60 * 60_000;
+// Absolute bounds are checked again at every lease admission, including after
+// reconstruction. Neither a restart nor a UTC date change renews a reservation.
+export function dailySessionBounded(startedAt: number, deadline: number, now: number): boolean {
+  return [startedAt, deadline, now].every(Number.isSafeInteger) && startedAt <= now && now < deadline &&
+    deadline - startedAt <= SESSION_LIMIT_MS && deadline <= (Math.floor(startedAt / DAY_MS) + 1) * DAY_MS;
+}
 type Sql = Pick<DurableObjectStorage, 'sql'>;
 export type UsageReservation = {
   session_id: string;
@@ -37,14 +43,14 @@ export class UsageLedger {
   reserve(sessionId: string, now: number, requestedDeadline: number, previousReadyId?: string):
     { deadline: number } | { reason: 'budget' | 'cleanup' } {
     const current = this.reservation();
+    if (!Number.isSafeInteger(now) || !Number.isSafeInteger(requestedDeadline) ||
+        (current && now < current.started_at)) return { reason: 'cleanup' };
     if (current?.state === 'reserved') {
-      if (current.session_id !== previousReadyId || now < current.started_at || current.deadline <= now) return { reason: 'cleanup' };
+      if (current.session_id !== previousReadyId || !this.covers(current.session_id, current.deadline, now)) return { reason: 'cleanup' };
       // Explicit rejoin changes process generation, never the prepaid lease.
       this.storage.sql.exec('UPDATE voice_usage_reservation SET session_id=? WHERE id=1', sessionId);
       return { deadline: current.deadline };
     }
-    if (!Number.isSafeInteger(now) || !Number.isSafeInteger(requestedDeadline) ||
-        (current && now < current.started_at)) return { reason: 'cleanup' };
     const day = Math.floor(now / DAY_MS) * DAY_MS;
     const duration = Math.min(SESSION_LIMIT_MS, requestedDeadline - now, day + DAY_MS - now, this.remaining(now));
     if (duration <= 0) return { reason: 'budget' };
@@ -60,7 +66,8 @@ export class UsageLedger {
   covers(sessionId: string, deadline: number, now: number): boolean {
     const current = this.reservation();
     return current?.state === 'reserved' && current.session_id === sessionId && current.deadline === deadline &&
-      current.started_at <= now && now < current.deadline;
+      dailySessionBounded(current.started_at, current.deadline, now) &&
+      current.reserved_ms === current.deadline - current.started_at && current.day === Math.floor(current.started_at / DAY_MS) * DAY_MS;
   }
   // Caller must prove Bot destruction and TTS stop/revocation completed first.
   // Do not call on process exit, timeout, or a mere request to destroy.

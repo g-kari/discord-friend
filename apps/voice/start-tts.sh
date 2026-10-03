@@ -7,7 +7,7 @@ engine_pid=$!
 node /app/src/server.js &
 api_pid=$!
 pids=("$engine_pid" "$api_pid")
-# Uvicorn's graceful SIGTERM waits for non-cancellable synthesis. A fixed trial deadline
+# Uvicorn's graceful SIGTERM waits for non-cancellable synthesis. A fixed session deadline
 # or adapter timeout must stop the actual CPU work, not wait for it beyond the budget.
 trap 'kill -KILL "${pids[@]}" 2>/dev/null || true; wait || true' EXIT TERM INT
 node /app/src/deadline.js &

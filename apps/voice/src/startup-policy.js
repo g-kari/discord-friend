@@ -10,7 +10,8 @@ export function assertBotStartup(env, now = Date.now(), approvedScope = APPROVED
   if (env.DISCORD_COMMAND_TRANSPORT !== 'http') throw new Error('HTTP command transport is required');
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(env.VOICE_SESSION_ID ?? '')) throw new Error('Missing voice session');
   if (!Number.isInteger(Number(env.VOICE_IDLE_SECONDS)) || Number(env.VOICE_IDLE_SECONDS) < 30 || Number(env.VOICE_IDLE_SECONDS) > 600) throw new Error('Invalid idle deadline');
-  const remaining = remainingLifetime(env.VOICE_DEADLINE, now);
+  if (env.VOICE_USAGE_MODE === 'daily' && env.VOICE_IDLE_SECONDS !== '300') throw new Error('Invalid daily idle deadline');
+  const remaining = remainingLifetime(env.VOICE_DEADLINE, now, env);
   const required = ['DISCORD_BOT_TOKEN', 'DISCORD_GUILD_ID', 'DISCORD_TEXT_CHANNEL_ID', 'DISCORD_OWNER_ID', 'DISCORD_APPLICATION_ID'];
   for (const name of required) {
     if (typeof env[name] !== 'string' || !env[name]) throw new Error(`Missing ${name}`);

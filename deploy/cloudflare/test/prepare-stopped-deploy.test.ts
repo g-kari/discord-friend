@@ -12,6 +12,7 @@ const source = fs.readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'u
 const tree = 'a'.repeat(40);
 const account = 'b'.repeat(32);
 const args = [tree, 'c'.repeat(64), 'd'.repeat(64), '100000000000000001', '100000000000000002', '100000000000000003', '100000000000000004'];
+const buildArgs = args.map((value, index) => index === 2 ? 'build' : value);
 
 test('prepares stopped config while preserving resource identity and unrelated settings', () => {
   const original = readSourceConfig(source);
@@ -26,7 +27,27 @@ test('prepares stopped config while preserving resource identity and unrelated s
   assert.equal(output.containers[1].image, `registry.cloudflare.com/${account}/discord-friend-voice-voicevox@sha256:${args[2]}`);
   assert.deepEqual(output.containers[0], original.containers[0]);
   assert.deepEqual({ ...output.containers[1], image: original.containers[1].image }, original.containers[1]);
+  assert.equal(output.vars.VOICE_IDLE_SECONDS, '300');
+  assert.equal(output.vars.VOICE_SESSION_MINUTES, '30');
   for (const key of ['durable_objects', 'migrations', 'secrets', 'triggers', 'observability', 'main', 'compatibility_date', 'compatibility_flags']) assert.deepEqual(output[key], original[key]);
+});
+
+test('explicit build mode prepares stopped eight-hour daily usage and retains both Dockerfiles', () => {
+  const original = readSourceConfig(source);
+  const output = createStoppedConfig(source, parseInputs(buildArgs, account));
+  const pinned = createStoppedConfig(source, parseInputs(args, account));
+  assert.equal(output.vars.BOT_ENABLED, 'false');
+  assert.equal(output.vars.DISCORD_HTTP_ENABLED, 'true');
+  assert.equal(output.vars.VOICE_DEADLINE, '');
+  assert.deepEqual(output.containers.map(c => c.max_instances), [0, 0]);
+  assert.deepEqual(output.containers.map(c => c.image), ['../../apps/voice/Dockerfile.bot', '../../apps/voice/Dockerfile.tts']);
+  assert.deepEqual(output.containers, original.containers);
+  assert.deepEqual(output, {
+    ...pinned,
+    vars: { ...pinned.vars, VOICE_USAGE_MODE: 'daily', DISCORD_SCOPE_MODE: 'installed-guilds', VOICE_IDLE_SECONDS: '300', VOICE_SESSION_MINUTES: '480' },
+    containers: original.containers,
+  });
+  assert.equal(readSourceConfig(source).vars.VOICE_SESSION_MINUTES, '30');
 });
 
 test('rejects malformed inputs, account IDs and out-of-range snowflakes', () => {
@@ -38,15 +59,26 @@ test('rejects malformed inputs, account IDs and out-of-range snowflakes', () => 
   assert.throws(() => parseInputs([...args, 'extra'], account));
   assert.throws(() => parseInputs(args, undefined));
   assert.throws(() => parseInputs(args, 'wrong-account'));
+  assert.throws(() => parseInputs(buildArgs, undefined));
+  assert.throws(() => parseInputs(buildArgs, 'wrong-account'));
   for (const badId of ['0', '-100000000000000001', '0100000000000000001', '18446744073709551616']) {
     const invalid = [...args]; invalid[3] = badId;
     assert.throws(() => parseInputs(invalid, account));
   }
 });
 
+test('accepts only an immutable lowercase TTS digest or the exact build literal', () => {
+  assert.equal(parseInputs(args, account).ttsDigest, args[2]);
+  assert.equal(parseInputs(buildArgs, account).ttsDigest, 'build');
+  for (const invalid of ['', 'BUILD', 'Build', ' build', 'build ', 'build-both', 'latest', 'd'.repeat(63), 'd'.repeat(65), 'D'.repeat(64), `sha256:${args[2]}`, '../../apps/voice/Dockerfile.tts', `registry.cloudflare.com/${account}/tts:latest`]) {
+    const invalidArgs = [...args]; invalidArgs[2] = invalid;
+    assert.throws(() => parseInputs(invalidArgs, account), /TTS digest or literal build/);
+  }
+});
+
 test('rejects changed source config before generating a deployment', () => {
   for (const changed of [source.replace('"BOT_ENABLED": "false"', '"BOT_ENABLED": "true"'), source.replace('voice-v1', 'voice-v2'), source.replace('"max_instances": 0', '"max_instances": 1'), source + '\n']) {
-    assert.throws(() => createStoppedConfig(changed, parseInputs(args, account)), /Wrangler config changed/);
+    for (const modeArgs of [args, buildArgs]) assert.throws(() => createStoppedConfig(changed, parseInputs(modeArgs, account)), /Wrangler config changed/);
   }
 });
 

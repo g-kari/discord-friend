@@ -2,6 +2,7 @@ import { APPROVED_SCOPE_FINGERPRINT, scopeFingerprint } from './guild-setup.ts';
 import { completeInteraction, type InteractionCommand, type CommandName } from './interactions.ts';
 import { InteractionLedger, openCommand, sealCommand, type VoiceSession } from './interaction-ledger.ts';
 import { commandScopeAllowed, installedScope, scopePolicyActive, sameSessionScope, APPROVED_PRINCIPAL, snowflake } from './scope-policy.ts';
+import { SESSION_LIMIT_MS } from './usage-ledger.ts';
 import { runtimeActive, type RuntimeEnv } from './readiness.ts';
 
 export interface CommandEnv extends RuntimeEnv {
@@ -14,6 +15,7 @@ export interface ContainerCommand {
   id: string; sessionId: string; applicationId: string; guildId: string;
   channelId: string; userId: string; name: CommandName; text?: string;
 }
+export interface VoiceSpeechLease { deadline: number; startedAt: number }
 export interface CommandResult { content: string; joined: boolean }
 export interface CommandRuntime {
   start(session: VoiceSession, signal: AbortSignal): Promise<void>;
@@ -36,8 +38,8 @@ export function modelMetadataActive(env: CommandEnv, approved = APPROVED_SCOPE_F
 export function commandRuntimeActive(env: CommandEnv, now: number = Date.now(), approved = APPROVED_SCOPE_FINGERPRINT, principal = APPROVED_PRINCIPAL): boolean {
   const idle = Number(env.VOICE_IDLE_SECONDS), minutes = Number(env.VOICE_SESSION_MINUTES);
   return env.DISCORD_HTTP_ENABLED === 'true' && runtimeActive(env, now) && scopePolicyActive(env, approved, principal) &&
-    Number.isInteger(idle) && idle >= 30 && idle <= 600 && Number.isInteger(minutes) && minutes >= 1 && minutes <= 30 &&
-    (env.VOICE_USAGE_MODE !== 'daily' || (idle === 300 && minutes === 30));
+    Number.isInteger(idle) && idle >= 30 && idle <= 600 && Number.isInteger(minutes) &&
+    (env.VOICE_USAGE_MODE === 'daily' ? idle === 300 && minutes === SESSION_LIMIT_MS / 60_000 : minutes >= 1 && minutes <= 30);
 }
 
 export class SessionCommands {
@@ -100,7 +102,7 @@ export class SessionCommands {
     await this.ledger.sync();
     if (!claim.accepted) {
       if (claim.reason === 'duplicate' || claim.reason === 'conflict') return;
-      await this.reply(command, claim.reason === 'scope' ? '別のチャンネルで使用中です。先にその接続を退出してください' : claim.reason === 'budget' ? '本日の利用枠（合計60分、UTC 0時更新）を使い切りました' : claim.reason === 'cleanup' ? '前の接続の停止を確認中です。少し待ってください' : claim.reason === 'cancelled' ? '接続を中止しました' : claim.reason === 'rate' ? '操作が多いため、少し待って再試行してください' : '操作を受け付けられません。少し待って再試行してください');
+      await this.reply(command, claim.reason === 'scope' ? '別のチャンネルで使用中です。先にその接続を退出してください' : claim.reason === 'budget' ? '本日の利用枠（合計8時間、UTC 0時更新）を使い切りました' : claim.reason === 'cleanup' ? '前の接続の停止を確認中です。少し待ってください' : claim.reason === 'cancelled' ? '接続を中止しました' : claim.reason === 'rate' ? '操作が多いため、少し待って再試行してください' : '操作を受け付けられません。少し待って再試行してください');
       return;
     }
     // A newer leave/stop cancels a cold start immediately, before its alarm job.
@@ -149,9 +151,10 @@ export class SessionCommands {
     else if (session?.status === 'stopped') await this.runtime.destroy(session.id);
     await this.ledger.sync();
   }
-  speechLease(sessionId: string): VoiceSession | null {
+  speechLease(sessionId: string): VoiceSpeechLease | null {
     const session = this.current(sessionId);
-    return commandRuntimeActive(this.env, this.now(), this.approved, this.principal) && session?.status === 'ready' && this.admitted(session) ? session : null;
+    if (!commandRuntimeActive(this.env, this.now(), this.approved, this.principal) || session?.status !== 'ready' || !this.admitted(session)) return null;
+    return { deadline: session.deadline, startedAt: this.env.VOICE_USAGE_MODE === 'daily' ? this.ledger.usage.reservation()!.started_at : session.createdAt };
   }
   admitted(session: VoiceSession): boolean {
     if (installedScope(this.env) && (!session.scope || session.scope.applicationId !== this.env.DISCORD_APPLICATION_ID || session.scope.userId !== this.env.DISCORD_OWNER_ID || !snowflake(session.scope.guildId) || !snowflake(session.scope.channelId))) return false;

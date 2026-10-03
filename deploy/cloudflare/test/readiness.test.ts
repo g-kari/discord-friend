@@ -31,10 +31,10 @@ test('a probe completing after the original deadline does not report ready', asy
 
 test('daily readiness only observes a live bounded session and never creates one', async () => {
   const daily = { ...env(), VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '' };
-  for (const deadline of [undefined, NOW - 1, NOW + 30 * 60_000 + 1]) {
+  for (const deadline of [undefined, NOW - 1, NOW + 8 * 60 * 60_000 + 1]) {
     const snapshot = await inspectReadiness(daily, async () => Response.json({ ready: true, deadline }), () => NOW);
     assert.equal(snapshot.state, 'unavailable');
   }
-  const snapshot = await inspectReadiness(daily, async () => Response.json({ ready: true, deadline: NOW + 60_000 }), () => NOW);
-  assert.equal(snapshot.state, 'gateway-ready'); assert.equal(snapshot.deadline, new Date(NOW + 60_000).toISOString());
+  const snapshot = await inspectReadiness(daily, async () => Response.json({ ready: true, deadline: NOW + 8 * 60 * 60_000 }), () => NOW);
+  assert.equal(snapshot.state, 'gateway-ready'); assert.equal(snapshot.deadline, new Date(NOW + 8 * 60 * 60_000).toISOString());
 });

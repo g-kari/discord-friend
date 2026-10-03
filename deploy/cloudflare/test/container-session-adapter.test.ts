@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { remainingLifetime } from '../../../apps/voice/src/lifetime.js';
 import { SPEECH_LABELS } from '../../../apps/voice/src/speech-status.js';
 
 // This exercises production index.ts and real SQLite. The SDK/container fixture
@@ -37,6 +38,7 @@ const sdk = `
     async startAndWaitForPorts(options) {
       if (this.ctx.pendingStop) { this.ctx.pendingStop = false; await this.onStop(); }
       this.ctx.starts++;
+      this.ctx.startedEnv = options.startOptions.envVars;
       this.ctx.container.running = true;
       this.ctx.actualSession = options.startOptions.envVars.VOICE_SESSION_ID;
       this.ctx.startedScope = { guildId: options.startOptions.envVars.DISCORD_GUILD_ID,
@@ -47,7 +49,7 @@ const sdk = `
       this.ctx.stops++;
       if (this.ctx.pendingStop) { this.ctx.pendingStop = false; await this.onStop(); }
     }
-    renewActivityTimeout() {}
+    renewActivityTimeout() { this.ctx.renews++; }
     async schedule(time, callback, payload) { this.ctx.schedules.push({ time, callback, payload }); return {}; }
     async fetch() { this.ctx.starts++; this.ctx.container.running = true; return new Response('inherited start'); }
   }
@@ -81,7 +83,7 @@ const { DiscordBot, Voicevox } = await import(`data:text/javascript;base64,${Buf
 function context() {
   const db = new DatabaseSync(':memory:');
   const ctx = {
-    starts: 0, destroys: 0, stops: 0, schedules: [] as any[],
+    startedEnv: {} as Record<string, string>, starts: 0, destroys: 0, stops: 0, renews: 0, schedules: [] as any[], healthStatus: 200,
     pendingStop: false, actualSession: null as string | null, failHealth: false, health: {} as Record<string, unknown>,
     storage: {
       sql: {
@@ -100,7 +102,7 @@ function context() {
           fetch: async () => {
             if (ctx.failHealth) throw new Error('SYNTHETIC_UNAVAILABLE');
             return Response.json({ sessionId: ctx.actualSession, ready: true, voice: 'ready',
-              queued: 0, idleAt: Date.now() + 60_000, ...ctx.health });
+              queued: 0, idleAt: Date.now() + 60_000, ...ctx.health }, { status: ctx.healthStatus });
           },
         };
       },
@@ -112,6 +114,33 @@ const session = () => ({ id: newId, status: 'starting', controlId: '100000000000
   deadline: NOW + 240_000, createdAt: NOW });
 const speech = () => new Request('http://tts.internal/v1/speech', {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"text":"synthetic"}',
+});
+
+test('Bot idle renewal requires ready Gateway health and the active bounded session deadline', async () => {
+  for (const health of [
+    { ready: true, deadline: session().deadline, idleAt: NOW + 120_000 },
+    { ready: false, deadline: session().deadline, idleAt: NOW + 120_000 },
+    { ready: true, deadline: session().deadline + 1, idleAt: NOW + 120_000 },
+    { ready: true, deadline: session().deadline, idleAt: session().deadline + 1 },
+    { ready: true, deadline: session().deadline, idleAt: NOW - 1 },
+    { ready: true, deadline: session().deadline, idleAt: Infinity },
+    { ready: true, deadline: session().deadline, idleAt: 'future' },
+  ]) {
+    const f = context();
+    try {
+      const bot = new DiscordBot(f.ctx, env);
+      bot.commandLedger.setSession({ ...session(), status: 'ready' }); bot.setImageLease(newId);
+      f.ctx.actualSession = newId; f.ctx.container.running = true; f.ctx.health = health;
+      f.ctx.healthStatus = health.ready ? 200 : 503;
+      await bot.onActivityExpired();
+      const valid = health.ready && health.deadline === session().deadline &&
+        typeof health.idleAt === 'number' && health.idleAt > NOW && health.idleAt <= session().deadline;
+      assert.equal(f.ctx.renews, valid ? 1 : 0);
+      assert.equal(f.ctx.destroys, valid ? 0 : 1);
+      assert.equal(bot.commandLedger.session().status, valid ? 'ready' : 'stopped');
+      assert.equal(f.ctx.starts, 0);
+    } finally { f.db.close(); }
+  }
 });
 
 test('installed adapter binds startup, private invocation and shutdown to the image generation scope', async () => {
@@ -625,7 +654,7 @@ test('production outbound speech applies the saved voice to owner messages only 
   } finally { f.db.close(); }
 });
 
-const dailyEnv = { ...env, VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '', VOICE_SESSION_MINUTES: '30' };
+const dailyEnv = { ...env, VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '', VOICE_SESSION_MINUTES: '480' };
 test('daily Bot startup requires a persisted reservation, not just a fabricated session', async () => {
   const f = context();
   try {
@@ -660,7 +689,7 @@ test('daily usage is refunded only after both Bot and TTS resource cleanup, neve
     ttsFailure = false; await restart.destroySession(newId);
     assert.equal(restart.commandLedger.usage.reservation().state, 'settled');
     const remaining = restart.commandLedger.usage.remaining(admittedAt);
-    assert.ok(remaining > before && remaining <= 59 * 60_000);
+    assert.ok(remaining > before && remaining <= 479 * 60_000);
     await restart.destroySession(newId);
     assert.equal(restart.commandLedger.usage.remaining(admittedAt), remaining, 'cleanup retries cannot refund twice');
     assert.equal(f.ctx.starts, 0);
@@ -668,7 +697,7 @@ test('daily usage is refunded only after both Bot and TTS resource cleanup, neve
 });
 test('daily TTS rejects RSS and unreserved Discord requests while retaining independently bounded valid leases', async () => {
   const f = context(); let admitted = false; const deadline = Date.now() + 60_000;
-  const guardedEnv = { ...dailyEnv, BOT: { getByName: () => ({ getSpeechLease: async () => admitted ? { deadline } : null }) } };
+  const guardedEnv = { ...dailyEnv, BOT: { getByName: () => ({ getSpeechLease: async () => admitted ? { deadline, startedAt: NOW } : null }) } };
   try {
     const tts = new Voicevox(f.ctx, guardedEnv);
     assert.equal((await tts.scopedSpeech(speech(), 'rss-service-binding', deadline)).status, 503);
@@ -683,4 +712,70 @@ test('daily TTS rejects RSS and unreserved Discord requests while retaining inde
     assert.equal((await tts.scopedSpeech(speech(), newId, deadline)).status, 503);
     assert.equal(f.ctx.starts, 1);
   } finally { f.db.close(); }
+});
+
+test('daily Bot and TTS receive the original eight-hour reservation across rejoin and reconstruction', async () => {
+  const originalClock = Date.now; let now = Date.parse('2026-10-03T08:00:00Z'); Date.now = () => now;
+  const startedAt = now, deadline = startedAt + 8 * 60 * 60_000;
+  const f = context(), speechContext = context();
+  try {
+    let bot = new DiscordBot(f.ctx, dailyEnv);
+    bot.commandLedger.usage.reserve(newId, now, deadline);
+    let active = { ...session(), createdAt: now, deadline, status: 'ready' };
+    bot.commandLedger.setSession(active);
+    await bot.startSession(active, new AbortController().signal);
+    assert.equal(f.ctx.startedEnv.VOICE_USAGE_MODE, 'daily');
+    assert.equal(remainingLifetime(f.ctx.startedEnv.VOICE_DEADLINE, now, f.ctx.startedEnv), 8 * 60 * 60_000);
+    now += 60 * 60_000;
+    const successor = '00000000-0000-4000-8000-000000000003';
+    bot.commandLedger.usage.reserve(successor, now, now + 8 * 60 * 60_000, newId);
+    active = { ...active, id: successor, createdAt: now };
+    bot.commandLedger.setSession(active);
+    bot = new DiscordBot(f.ctx, dailyEnv);
+    await bot.startSession(active, new AbortController().signal);
+    assert.equal(f.ctx.startedEnv.VOICE_SESSION_STARTED_AT, new Date(startedAt).toISOString());
+    assert.equal(f.ctx.startedEnv.VOICE_DEADLINE, new Date(deadline).toISOString());
+    assert.equal(remainingLifetime(f.ctx.startedEnv.VOICE_DEADLINE, now, f.ctx.startedEnv), 7 * 60 * 60_000);
+    const tts = new Voicevox(speechContext.ctx, { ...dailyEnv, BOT: { getByName: () => bot } });
+    assert.equal((await tts.scopedSpeech(speech(), successor, deadline)).status, 200);
+    assert.equal(speechContext.ctx.startedEnv.VOICE_USAGE_MODE, 'daily');
+    assert.equal(speechContext.ctx.startedEnv.VOICE_SESSION_STARTED_AT, new Date(startedAt).toISOString());
+    assert.equal(remainingLifetime(speechContext.ctx.startedEnv.VOICE_DEADLINE, now, speechContext.ctx.startedEnv), 7 * 60 * 60_000);
+    now = deadline;
+    assert.equal(await bot.getSpeechLease(successor), null);
+    assert.equal((await tts.scopedSpeech(speech(), successor, deadline)).status, 503);
+    await bot.expireCommandSession({ sessionId: successor });
+    assert.equal(bot.commandLedger.session().status, 'stopped');
+    assert.equal(bot.commandLedger.usage.remaining(now), 0);
+  } finally { Date.now = originalClock; f.db.close(); speechContext.db.close(); }
+});
+test('daily TTS refuses invalid original bounds even when the remaining deadline fits eight hours', async () => {
+  const originalClock = Date.now; const now = Date.parse('2026-10-03T12:00:00Z'); Date.now = () => now;
+  const deadline = now + 60_000;
+  try {
+    for (const startedAt of [undefined, now + 1, deadline - 8 * 60 * 60_000 - 1]) {
+      const f = context();
+      try {
+        const tts = new Voicevox(f.ctx, { ...dailyEnv, BOT: { getByName: () => ({ getSpeechLease: async () => ({ deadline, startedAt }) }) } });
+        assert.equal((await tts.scopedSpeech(speech(), newId, deadline)).status, 503);
+        assert.equal(f.ctx.starts, 0);
+      } finally { f.db.close(); }
+    }
+  } finally { Date.now = originalClock; }
+});
+test('TTS revocation survives reconstruction past the former thirty-one-minute horizon', async () => {
+  const originalClock = Date.now; let now = Date.parse('2026-10-03T08:00:00Z'); Date.now = () => now;
+  const start = now, deadline = now + 8 * 60 * 60_000, f = context();
+  const guarded = { ...dailyEnv, BOT: { getByName: () => ({ getSpeechLease: async () => ({ deadline, startedAt: start }) }) } };
+  try {
+    const tts = new Voicevox(f.ctx, guarded); await tts.stopSession(newId);
+    const revoked = f.db.prepare('SELECT expires_at FROM voice_tts_revoked WHERE session_id=?').get(newId);
+    assert.equal(revoked.expires_at, deadline + 60_000);
+    for (const elapsed of [31 * 60_000, 7 * 60 * 60_000, 8 * 60 * 60_000 - 1]) {
+      now = start + elapsed;
+      const restored = new Voicevox(f.ctx, guarded);
+      assert.equal((await restored.scopedSpeech(speech(), newId, deadline)).status, 503);
+    }
+    assert.equal(f.ctx.starts, 0);
+  } finally { Date.now = originalClock; f.db.close(); }
 });
