@@ -11,6 +11,10 @@ export const COMMANDS = [
   { type: 1, name: 'say', description: 'つむぎでテキストを読み上げ', options: [
     { type: 3, name: 'text', description: '読み上げる文章', required: true, max_length: 500 },
   ] },
+  { type: 1, name: 'model', description: 'VOICEVOXの声を一覧表示・自分の読み上げの声を変更', options: [
+    { type: 4, name: 'id', description: '一覧にある声のID（自分の読み上げだけ変更）', required: false, min_value: 0 },
+    { type: 4, name: 'page', description: '保存済みの声一覧のページ番号', required: false, min_value: 1 },
+  ] },
 ] as const;
 
 export interface SetupEnv {
@@ -93,9 +97,9 @@ function normalizedOptions(value: unknown): unknown {
   return value.map(option => {
     if (!object(option)) return null;
     // Reject extra behaviors/localizations rather than overwrite them silently.
-    const allowed = ['type', 'name', 'description', 'required', 'max_length', 'name_localizations', 'description_localizations'];
+    const allowed = ['type', 'name', 'description', 'required', 'max_length', 'min_value', 'max_value', 'name_localizations', 'description_localizations'];
     if (Object.keys(option).some(key => !allowed.includes(key)) || option.name_localizations || option.description_localizations) return null;
-    return { type: option.type, name: option.name, description: option.description, required: option.required ?? false, max_length: option.max_length ?? null };
+    return { type: option.type, name: option.name, description: option.description, required: option.required ?? false, max_length: option.max_length ?? null, min_value: option.min_value ?? null, max_value: option.max_value ?? null };
   });
 }
 export function matchesCommand(actual: unknown, desired: typeof COMMANDS[number]): boolean {

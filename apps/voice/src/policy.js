@@ -54,15 +54,15 @@ export async function boundedBytes(response, limit) {
   return bytes;
 }
 
-export function assertWav(bytes) {
-  if (bytes.length < 44) throw new VoiceError('INVALID_AUDIO', 502);
+export function wavPcm(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.length < 44) throw new VoiceError('INVALID_AUDIO', 502);
   const decode = (start, end) => new TextDecoder().decode(bytes.subarray(start, end));
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (decode(0, 4) !== 'RIFF' || decode(8, 12) !== 'WAVE' || view.getUint32(4, true) + 8 !== bytes.length) {
     throw new VoiceError('INVALID_AUDIO', 502);
   }
   let fmt = false;
-  let data = false;
+  let data = null;
   let offset = 12;
   while (offset + 8 <= bytes.length) {
     const length = view.getUint32(offset + 4, true);
@@ -70,14 +70,20 @@ export function assertWav(bytes) {
     if (end > bytes.length) throw new VoiceError('INVALID_AUDIO', 502);
     const id = decode(offset, offset + 4);
     if (id === 'fmt ') {
-      if (length < 16 || view.getUint16(offset + 8, true) !== 1 ||
+      if (fmt || length < 16 || view.getUint16(offset + 8, true) !== 1 ||
           view.getUint16(offset + 10, true) !== 2 || view.getUint32(offset + 12, true) !== 48000 ||
           view.getUint16(offset + 22, true) !== 16 || view.getUint16(offset + 20, true) !== 4 ||
           view.getUint32(offset + 16, true) !== 192000) throw new VoiceError('INVALID_AUDIO', 502);
       fmt = true;
     }
-    if (id === 'data') { data = length > 0 && length % 4 === 0; }
+    if (id === 'data') {
+      if (data || length === 0 || length % 4 !== 0) throw new VoiceError('INVALID_AUDIO', 502);
+      data = bytes.subarray(offset + 8, end);
+    }
     offset = end + (length % 2);
   }
   if (!fmt || !data || offset !== bytes.length) throw new VoiceError('INVALID_AUDIO', 502);
+  return data;
 }
+
+export function assertWav(bytes) { wavPcm(bytes); }

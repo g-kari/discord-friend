@@ -121,21 +121,21 @@ test('guild setup uses the real workerd global fetch without following Discord r
     outboundService: (request: Request) => network.respond(request),
   }));
   try {
-    await t.test('creates all five missing commands and verifies the final readback', async () => {
+    await t.test('creates all six missing commands and verifies the final readback', async () => {
       network = discord();
       const response = await runtime.dispatchFetch('https://setup.test/run');
       assert.equal(response.status, 200);
       const { receipt, saves } = await response.json();
-      assert.equal(network.calls.length, 14, 'real workerd fetch must reach the intercepted target reads, command creates, and readback');
+      assert.equal(network.calls.length, 2 * COMMANDS.length + 4, 'real workerd fetch must reach the intercepted target reads, command creates, and readback');
       assert.equal(receipt.state, 'complete');
       assert.equal(receipt.error, null);
       assert.deepEqual(receipt.verifiedNames, COMMANDS.map(command => command.name));
       assert.deepEqual(network.calls.filter(call => call.method === 'POST').map(call => call.body), [...COMMANDS]);
-      assert.equal(network.calls.filter(call => new URL(call.url).pathname === COMMAND_PATH && call.method === 'GET').length, 7);
+      assert.equal(network.calls.filter(call => new URL(call.url).pathname === COMMAND_PATH && call.method === 'GET').length, COMMANDS.length + 2);
       assert.equal(network.calls.at(-1)?.method, 'GET');
       assert.equal(network.calls.at(-1)?.url, `https://discord.com${COMMAND_PATH}?with_localizations=true`);
       assert.deepEqual(network.existing[0], UNRELATED);
-      assert.equal(network.existing.length, 6);
+      assert.equal(network.existing.length, COMMANDS.length + 1);
       assert.ok(network.calls.every(call => new URL(call.url).origin === 'https://discord.com' && call.authorization === `Bot ${TOKEN}`));
       assert.deepEqual(saves.filter((save: { attemptedName: string | null }) => save.attemptedName).map((save: { attemptedName: string }) => save.attemptedName), COMMANDS.map(command => command.name));
       assert.equal(saves.at(-1).state, 'complete');

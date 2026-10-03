@@ -29,3 +29,24 @@ test('busy and failed synthesis errors are honest and contain no upstream detail
   assert.equal(failure.status, 502);
   assert.deepEqual(await failure.json(), { error: 'SYNTHESIS_FAILED' });
 });
+
+test('model catalog HTTP listing reads cached metadata without synthesizing or requesting the engine', async () => {
+  let calls = 0; let catalog = null;
+  const synth = async () => { calls++; assert.fail('listing must never synthesize'); }; synth.catalog = () => catalog;
+  const handle = createVoiceHandler(synth); const request = () => new Request('http://voice.internal/v1/models');
+  const cold = await handle(request()); assert.equal(cold.status, 503); assert.deepEqual(await cold.json(), { catalog: null });
+  catalog = [{ id: 8, name: 'ずんだもん', style: 'あまあま' }];
+  const cached = await handle(request()); assert.equal(cached.status, 200); assert.deepEqual(await cached.json(), { catalog }); assert.equal(calls, 0);
+  assert.equal((await handle(new Request('http://voice.internal/v1/models?refresh=true'))).status, 404);
+});
+test('private style header is bounded and emitted credit follows the selected speaker', async () => {
+  let selected;
+  const handle = createVoiceHandler(async (_input, _signal, options) => {
+    selected = options.speakerId; return { audio: new Uint8Array([1]), contentType: 'audio/wav', credit: 'VOICEVOX:ずんだもん（あまあま）' };
+  });
+  const response = await handle(req('{"text":"声"}', { 'content-type': 'application/json', 'x-voice-speaker-id': '8' }));
+  assert.equal(selected, 8); assert.equal(decodeURIComponent(response.headers.get('x-voice-credit')), 'VOICEVOX:ずんだもん（あまあま）');
+  for (const value of ['-1', '1.5', '8anything', '9007199254740992']) {
+    assert.equal((await handle(req('{"text":"声"}', { 'content-type': 'application/json', 'x-voice-speaker-id': value }))).status, 400);
+  }
+});

@@ -1,5 +1,6 @@
 import { boundedBytes, validateSpeech } from './policy.js';
 
+// /model is a DO-only metadata operation and is never forwarded to this process.
 const commands = ['join', 'leave', 'stop', 'voice-status', 'say'];
 const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
 const snowflake = value => typeof value === 'string' && /^\d{17,20}$/u.test(value);
@@ -12,11 +13,17 @@ export function createCommandService({ scope, sessionId, deadline, idleSeconds =
       !Number.isInteger(idleSeconds) || idleSeconds < 30 || idleSeconds > 600 ||
       !['applicationId', 'guildId', 'channelId', 'userId'].every(key => snowflake(scope[key]))) throw new Error('INVALID_COMMAND_SESSION');
   const seen = new Map();
+  const pendingSpeech = new Map();
   let controlId = 0n;
   let idleAt = Math.min(deadline, now() + idleSeconds * 1000);
   let ended = false;
   const touch = () => { if (!ended) idleAt = Math.min(deadline, now() + idleSeconds * 1000); };
-  const end = () => { if (!ended) { ended = true; cancelJoin(); shutdown(); } };
+  const cancelSpeech = before => {
+    for (const [id, controller] of pendingSpeech) {
+      if (before === undefined || BigInt(id) <= before) controller.abort();
+    }
+  };
+  const end = () => { if (!ended) { ended = true; cancelSpeech(); cancelJoin(); shutdown(); } };
   const checkIdle = () => { if (now() >= Math.min(idleAt, deadline)) end(); return ended; };
   async function handler(request) {
     const url = new URL(request.url);
@@ -56,21 +63,29 @@ export function createCommandService({ scope, sessionId, deadline, idleSeconds =
     if (['join', 'leave', 'stop'].includes(command.name)) {
       if (BigInt(command.id) <= controlId) return Response.json({ content: '操作を中止しました', joined: false }, { headers });
       controlId = BigInt(command.id);
+      // A /say may be awaiting the speaker's member/display-name lookup.
+      // Clear its admission as well as the already-enqueued player items.
+      cancelSpeech(controlId);
       if (command.name !== 'join') cancelJoin(); // Cancellation precedes asynchronous dispatch.
     }
     touch();
     const acceptedControl = controlId;
-    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(Math.max(1, Math.min(25_000, deadline - now())))]);
+    const speechAbort = new AbortController();
+    if (command.name === 'say') pendingSpeech.set(command.id, speechAbort);
+    const signal = AbortSignal.any([request.signal, speechAbort.signal,
+      AbortSignal.timeout(Math.max(1, Math.min(25_000, deadline - now())))]);
     // Put the promise in the map before the first asynchronous operation.
     const result = Promise.resolve().then(async () => {
       if (ended || (command.name === 'join' && acceptedControl !== controlId)) return { content: '接続を中止しました', joined: false };
+      if (command.name === 'say' && BigInt(command.id) <= controlId) return { content: '読み上げを中止しました', joined: false };
       try {
+        signal.throwIfAborted();
         const value = await dispatch(command, signal);
         if (command.name === 'join' && (ended || acceptedControl !== controlId)) return { content: '接続を中止しました', joined: false };
         if (!value || typeof value.content !== 'string' || value.content.length > 500 || typeof value.joined !== 'boolean') throw new Error('INVALID_COMMAND_RESULT');
         return value;
-      } catch { return { content: '処理に失敗しました。接続状態を確認してください', joined: false }; }
-    });
+      } catch { return { content: signal.aborted && command.name === 'say' ? '読み上げを中止しました' : '処理に失敗しました。接続状態を確認してください', joined: false }; }
+    }).finally(() => { if (pendingSpeech.get(command.id) === speechAbort) pendingSpeech.delete(command.id); });
     if (seen.size < 128) seen.set(command.id, { fingerprint, result }); // Control-ID watermark protects priority stops when full.
     return Response.json(await result, { headers });
   }

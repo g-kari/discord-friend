@@ -35,6 +35,37 @@ test('leave accepted during delayed join prevents a late joined response',async(
   const join=f.service.handler(request(command(1,'join')));await new Promise(resolve=>setImmediate(resolve));
   await f.service.handler(request(command(2,'leave')));finish();assert.equal((await(await join).json()).joined,false);assert.equal(f.cancels(),1);
 });
+test('stop/leave/rejoin cancels a say waiting for speaker lookup without refilling the cleared queue',async()=>{
+  for (const control of ['stop','leave','join']) {
+    let finish;const memberLookup=new Promise(resolve=>{finish=resolve;});const queued=[];let oldSignal;
+    const f=fixture(async(value,signal)=>{
+      if(value.name==='say'){
+        oldSignal=signal;
+        await memberLookup;
+        signal.throwIfAborted(); // Production checks this directly after member lookup.
+        queued.push(value.text);
+      }else queued.length=0;
+      return{content:'確認しました',joined:true};
+    });
+    const oldSay=f.service.handler(request(command(1)));
+    await new Promise(resolve=>setImmediate(resolve));
+    await f.service.handler(request(command(2,control)));
+    assert.equal(oldSignal.aborted,true);
+    finish();
+    assert.equal((await(await oldSay).json()).content,'読み上げを中止しました');
+    assert.deepEqual(queued,[]);
+    await f.service.handler(request(command(3)));
+    assert.deepEqual(queued,['こんにちは']); // New speech is still admitted.
+  }
+});
+test('session end aborts an accepted say still waiting for its speaker lookup',async()=>{
+  let finish;const memberLookup=new Promise(resolve=>{finish=resolve;});let queued=0,signal;
+  const f=fixture(async(_value,pendingSignal)=>{signal=pendingSignal;await memberLookup;signal.throwIfAborted();queued++;return{content:'確認しました',joined:true};});
+  const oldSay=f.service.handler(request(command(1)));
+  await new Promise(resolve=>setImmediate(resolve));
+  f.service.end();assert.equal(signal.aborted,true);finish();
+  await oldSay;assert.equal(queued,0);assert.equal(f.ends(),1);
+});
 test('idle health checks do not extend inactivity and valid activity cannot extend the absolute cap',async()=>{
   const f=fixture();f.setNow(NOW+299_000);await f.service.handler(new Request('http://bot.internal/health'));assert.equal(f.service.idleAt,NOW+300_000);
   f.setNow(NOW+300_000);assert.equal(f.service.checkIdle(),true);assert.equal(f.ends(),1);f.service.touch();assert.equal(f.service.checkIdle(),true);assert.equal(f.ends(),1);

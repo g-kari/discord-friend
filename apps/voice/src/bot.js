@@ -2,8 +2,10 @@ import { Readable } from 'node:stream';
 import { Client, Events, GatewayIntentBits, ChannelType, PermissionsBitField } from 'discord.js';
 import { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState,
   AudioPlayerStatus, VoiceConnectionStatus, StreamType, NoSubscriberBehavior } from '@discordjs/voice';
-import { assertWav, boundedBytes, validateSpeech } from './policy.js';
-import { SpeechQueue, readableMessage } from './queue.js';
+import { boundedBytes, validateSpeech } from './policy.js';
+import { discordPcmFromWav } from './audio.js';
+import { SpeechQueue } from './queue.js';
+import { messageNarration, narrationText } from './speech-text.js';
 import { applyLifetime } from './lifetime.js';
 import { assertBotStartup } from './startup-policy.js';
 import { VoiceLifecycle } from './voice-lifecycle.js';
@@ -25,25 +27,15 @@ function recordError(error) {
 }
 player.on('error', recordError);
 
-function pcmFromWav(audio) {
-  assertWav(audio);
-  const bytes = Buffer.from(audio);
-  for (let offset = 12; offset + 8 <= bytes.length;) {
-    const size = bytes.readUInt32LE(offset + 4);
-    if (bytes.toString('ascii', offset, offset + 4) === 'data') return bytes.subarray(offset + 8, offset + 8 + size);
-    offset += 8 + size + size % 2;
-  }
-  throw new Error('Missing PCM');
-}
-const queue = new SpeechQueue(async (text, signal) => {
+const queue = new SpeechQueue(async ({ text, authorId }, signal) => {
   if (!lifecycle.isReady) throw new Error('Voice not ready');
   commandService.touch();
-  const response = await fetch(ttsUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-voice-session-id': sessionId },
+  const response = await fetch(ttsUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-voice-session-id': sessionId, 'x-voice-author-id': authorId },
     body: JSON.stringify(validateSpeech({ text })), signal: AbortSignal.any([signal, AbortSignal.timeout(45000)]), redirect: 'error' });
   if (!response.ok) { await response.body?.cancel(); throw new Error('Synthesis failed'); }
   const audio = await boundedBytes(response, 24 * 1024 * 1024);
   signal.throwIfAborted();
-  const resource = createAudioResource(Readable.from([pcmFromWav(audio)]), { inputType: StreamType.Raw });
+  const resource = createAudioResource(Readable.from([discordPcmFromWav(audio)]), { inputType: StreamType.Raw });
   const abort = () => player.stop(true);
   signal.addEventListener('abort', abort, { once: true });
   try {
@@ -88,7 +80,7 @@ async function dispatchCommand(command, signal) {
         return { content: {
           joining: '接続中です', cancelled: '接続を中止しました',
           'no-channel': '先に通常のボイスチャンネルへ入ってください',
-          joined: '読み上げを開始します（VOICEVOX:春日部つむぎ）。録音はしません',
+          joined: '読み上げを開始します（既定:VOICEVOX:春日部つむぎ。あなたの声は /model で確認できます）。録音はしません',
         }[result], joined: result === 'joined' };
       }
       case 'leave': leave(); return { content: '退出しました', joined: false };
@@ -96,23 +88,27 @@ async function dispatchCommand(command, signal) {
       case 'say': {
         if (!lifecycle.isReady) throw new Error('Not connected');
         const { text } = validateSpeech({ text: command.text });
-        return { content: queue.enqueue(text) ? '読み上げを受け付けました' : '待ち行列が満杯です。少し待ってから再試行してください', joined: true };
+        const guild = await client.guilds.fetch(guildId);
+        const member = await guild.members.fetch(command.userId);
+        signal.throwIfAborted();
+        let narration;
+        try { narration = narrationText(text, { member, user: member.user }); }
+        catch { return { content: '話者名を含めて500文字以内にしてください', joined: true }; }
+        return { content: queue.enqueue({ text: narration, authorId: command.userId }) ? '読み上げを受け付けました' : '待ち行列が満杯です。少し待ってから再試行してください', joined: true };
       }
       case 'voice-status':
         return { content: `音声接続: ${lifecycle.connection?.state.status ?? '未接続'} / 待機: ${queue.items.length} / 直近エラー: ${lastError ?? 'なし'}`, joined: lifecycle.isReady };
     }
     throw new Error('UNKNOWN_COMMAND');
 }
-// All five application commands use the Worker's HTTP interaction route. Never
+// All six application commands use the Worker's HTTP interaction route. Never
 // install a Gateway interaction listener or acknowledge the same command twice.
 client.on(Events.MessageCreate, message => {
-  if (message.guildId !== guildId || message.channelId !== textChannelId || message.author.bot || !lifecycle.channelId ||
-      !lifecycle.isReady || message.member?.voice.channelId !== lifecycle.channelId) return;
-  const text = readableMessage(message.content);
-  if (!text) return;
   try {
-    validateSpeech({ text });
-    if (!queue.enqueue(text)) lastError = 'QUEUE_FULL';
+    const text = messageNarration(message, { guildId, textChannelId,
+      channelId: lifecycle.channelId, ready: lifecycle.isReady });
+    if (!text) return;
+    if (!queue.enqueue({ text, authorId: message.author.id })) lastError = 'QUEUE_FULL';
     else commandService.touch();
   } catch { lastError = 'MESSAGE_TOO_LONG'; }
 });

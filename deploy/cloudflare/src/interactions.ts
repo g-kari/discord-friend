@@ -1,6 +1,6 @@
 import { scopeFingerprint, APPROVED_SCOPE_FINGERPRINT } from './guild-setup.ts';
 
-export const COMMAND_NAMES = ['join', 'leave', 'stop', 'voice-status', 'say'] as const;
+export const COMMAND_NAMES = ['join', 'leave', 'stop', 'voice-status', 'say', 'model'] as const;
 export type CommandName = typeof COMMAND_NAMES[number];
 export interface InteractionCommand {
   id: string;
@@ -10,6 +10,8 @@ export interface InteractionCommand {
   userId: string;
   name: CommandName;
   text?: string;
+  speakerId?: number;
+  page?: number;
   token: string;
   receivedAt: number;
   bodyHash: string;
@@ -92,19 +94,32 @@ export async function receiveInteraction(request: Request, env: InteractionEnv,
       !object(member) || !object(member.user) || member.user.id !== env.DISCORD_OWNER_ID || payload.user !== undefined ||
       (payload.context !== undefined && payload.context !== 0)) return reply('この操作は指定チャンネルの管理者のみ利用できます');
   let text: string | undefined;
+  let speakerId: number | undefined;
+  let page: number | undefined;
   const options = payload.data.options ?? [];
   if (payload.data.name === 'say') {
     if (!Array.isArray(options) || options.length !== 1 || !object(options[0]) || options[0].name !== 'text' || options[0].type !== 3 || typeof options[0].value !== 'string') return reply('読み上げる文章を指定してください');
     text = options[0].value.trim();
     if (!text || Array.from(text).length > 500 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) return reply('文章は500文字以内で指定してください');
+  } else if (payload.data.name === 'model') {
+    if (!Array.isArray(options) || options.length > 1) return reply('id または page のどちらかを指定してください');
+    if (options.length) {
+      const option = options[0];
+      if (!object(option) || option.type !== 4 || !Number.isSafeInteger(option.value) ||
+          !['id', 'page'].includes(String(option.name)) || Number(option.value) < (option.name === 'id' ? 0 : 1)) return reply('声のIDまたはページ番号を確認してください');
+      if (option.name === 'id') speakerId = Number(option.value); else page = Number(option.value);
+    }
   } else if (!Array.isArray(options) || options.length !== 0) return reply('引数を確認してください');
   if (typeof payload.token !== 'string' || !/^[A-Za-z0-9._-]{16,512}$/.test(payload.token)) return reply('応答情報を確認できません');
-  if (!active()) return reply('現在は停止中です');
+  // Authenticated model metadata may run while voice startup is disabled.
+  // DISCORD_HTTP_ENABLED and the signature/fixed-scope checks above still apply.
+  if (payload.data.name !== 'model' && !active()) return reply('現在は停止中です');
   const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', raw)), b => b.toString(16).padStart(2, '0')).join('');
   const command: InteractionCommand = {
     id: payload.id, applicationId: env.DISCORD_APPLICATION_ID, guildId: env.DISCORD_GUILD_ID,
     channelId: env.DISCORD_TEXT_CHANNEL_ID, userId: env.DISCORD_OWNER_ID,
-    name: payload.data.name as CommandName, ...(text === undefined ? {} : { text }), token: payload.token, receivedAt: now(), bodyHash: hash,
+    name: payload.data.name as CommandName, ...(text === undefined ? {} : { text }),
+    ...(speakerId === undefined ? {} : { speakerId }), ...(page === undefined ? {} : { page }), token: payload.token, receivedAt: now(), bodyHash: hash,
   };
   // Background work may fail, but it never logs a request/body/token or retries execution.
   waitUntil(enqueue(command).catch(() => {}));

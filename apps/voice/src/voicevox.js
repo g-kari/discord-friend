@@ -1,4 +1,5 @@
-import { boundedBytes, assertWav, validateSpeech, VoiceError, CREDIT } from './policy.js';
+import { boundedBytes, assertWav, validateSpeech, VoiceError } from './policy.js';
+import { voiceCatalog, selectedVoice, voiceCredit } from './models.js';
 
 /** Shared by the HTTP/RSS adapter and Discord playback. No files, text logging or silent fallback. */
 export function createSynthesizer({ baseUrl = 'http://127.0.0.1:50021', fetchImpl = fetch, timeoutMs = 30000, onRecycle = () => {} } = {}) {
@@ -7,6 +8,7 @@ export function createSynthesizer({ baseUrl = 'http://127.0.0.1:50021', fetchImp
     throw new Error('Invalid VOICEVOX service URL');
   }
   let active = false;
+  let catalog = null;
   async function request(path, init, signal, limit, onResponse = () => {}) {
     const response = await fetchImpl(new URL(path, base), { ...init, signal, redirect: 'error' });
     onResponse();
@@ -16,8 +18,9 @@ export function createSynthesizer({ baseUrl = 'http://127.0.0.1:50021', fetchImp
     }
     return boundedBytes(response, limit);
   }
-  return async function synthesize(input, callerSignal) {
+  const synthesize = async function(input, callerSignal, { speakerId } = {}) {
     const { text, speed } = validateSpeech(input);
+    if (speakerId !== undefined && (!Number.isSafeInteger(speakerId) || speakerId < 0)) throw new VoiceError('INVALID_SPEAKER');
     if (active) throw new VoiceError('SYNTHESIS_BUSY', 429);
     if (callerSignal?.aborted) throw new VoiceError('SYNTHESIS_CANCELLED_OR_TIMED_OUT', 504);
     // Ordinary VOICEVOX /synthesis cannot cancel CPU work when its HTTP client disconnects.
@@ -45,9 +48,8 @@ export function createSynthesizer({ baseUrl = 'http://127.0.0.1:50021', fetchImp
       const signal = controller.signal;
       const speakers = JSON.parse(new TextDecoder().decode(await request('/speakers', {}, signal, 1024 * 1024)));
       signal.throwIfAborted(); callerSignal?.throwIfAborted();
-      const speaker = Array.isArray(speakers) && speakers.find(s => s.name === '春日部つむぎ');
-      const style = speaker && Array.isArray(speaker.styles) && speaker.styles.find(s => s.name === 'ノーマル');
-      if (!style || !Number.isSafeInteger(style.id) || style.id < 0) throw new VoiceError('VOICE_NOT_AVAILABLE', 503);
+      catalog = voiceCatalog(speakers);
+      const style = selectedVoice(catalog, speakerId);
       const params = new URLSearchParams({ text, speaker: String(style.id) });
       const query = JSON.parse(new TextDecoder().decode(await request(`/audio_query?${params}`, { method: 'POST' }, signal, 2 * 1024 * 1024)));
       signal.throwIfAborted(); callerSignal?.throwIfAborted();
@@ -61,7 +63,7 @@ export function createSynthesizer({ baseUrl = 'http://127.0.0.1:50021', fetchImp
       }, signal, 24 * 1024 * 1024, () => { synthesisUnconfirmed = false; });
       signal.throwIfAborted(); assertWav(audio);
       callerSignal?.throwIfAborted();
-      return { audio, contentType: 'audio/wav', credit: CREDIT };
+      return { audio, contentType: 'audio/wav', credit: voiceCredit(style) };
     };
     try {
       // Also bound a fetch/body implementation that fails to reject on abort. The engine
@@ -78,4 +80,6 @@ export function createSynthesizer({ baseUrl = 'http://127.0.0.1:50021', fetchImp
       if (!poisoned) active = false;
     }
   };
+  synthesize.catalog = () => catalog?.map(voice => ({ ...voice })) ?? null;
+  return synthesize;
 }

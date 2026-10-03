@@ -37,8 +37,8 @@ test('signed stale and future timestamps are independently rejected', async () =
     const result = await invoke(await signed(payload(), stamp)); assert.equal(result.response.status, 401); assert.equal(result.queued.length, 0);
   }
 });
-test('all five scoped commands defer ephemerally and keep reply tokens out of the response', async () => {
-  for (const name of ['join', 'leave', 'stop', 'voice-status', 'say']) {
+test('all six scoped commands defer ephemerally and keep reply tokens out of the response', async () => {
+  for (const name of ['join', 'leave', 'stop', 'voice-status', 'say', 'model']) {
     const result = await invoke(await signed(payload(name))); assert.equal(result.response.status, 200);
     const response = await result.response.text(); assert.deepEqual(JSON.parse(response), { type: 5, data: { flags: 64 } });
     assert.doesNotMatch(response, /synthetic_interaction/); assert.equal(result.queued.length, 1);
@@ -83,4 +83,28 @@ test('deferred completion refuses redirects and never retries an operation or ex
     assert.equal(result, status === 200); assert.equal(calls, 1);
   }
   assert.equal(await completeInteraction(scope.DISCORD_APPLICATION_ID, 'synthetic_reply_token', '完了', async () => { throw new Error('https://secret.invalid/synthetic_reply_token'); }), false);
+});
+
+
+test('model accepts listing, a style ID or a page only within the fixed owner scope', async () => {
+  for (const [name, value, key] of [['id', 8, 'speakerId'], ['page', 2, 'page']] as const) {
+    const body = { ...payload('model'), data: { type: 1, name: 'model', options: [{ type: 4, name, value }] } };
+    const result = await invoke(await signed(body));
+    assert.equal(result.queued.length, 1); assert.equal((result.queued[0] as any)[key], value);
+    assert.equal((await invoke(await signed({ ...body, member: { user: { id: '100000000000000099' } } }))).queued.length, 0);
+  }
+  for (const options of [
+    [{ type: 4, name: 'id', value: -1 }], [{ type: 4, name: 'id', value: 0.5 }],
+    [{ type: 4, name: 'id', value: Number.MAX_SAFE_INTEGER + 1 }], [{ type: 3, name: 'id', value: '8' }],
+    [{ type: 4, name: 'page', value: 0 }], [{ type: 4, name: 'url', value: 8 }],
+    [{ type: 4, name: 'id', value: 8 }, { type: 4, name: 'page', value: 1 }],
+  ]) assert.equal((await invoke(await signed({ ...payload('model'), data: { type: 1, name: 'model', options } }))).queued.length, 0);
+});
+
+
+test('authenticated model metadata is allowed with inactive voice runtime but never with HTTP disabled or a mismatched scope', async () => {
+  assert.equal((await invoke(await signed(payload('model')), false)).queued.length, 1);
+  assert.equal((await invoke(await signed(payload('join')), false)).queued.length, 0);
+  assert.equal((await invoke(await signed(payload('model')), false, { ...env, DISCORD_HTTP_ENABLED: 'false' })).queued.length, 0);
+  assert.equal((await invoke(await signed(payload('model')), false, { ...env, DISCORD_OWNER_ID: '100000000000000099' })).queued.length, 0);
 });

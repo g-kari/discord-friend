@@ -30,6 +30,6 @@ export function readableMessage(text) {
   // Do not read hidden spoilers, code, mentions or URLs out loud.
   return text.replace(/\|\|[\s\S]*?\|\|/gu, '')
     .replace(/```[\s\S]*?```/gu, '').replace(/`[^`]*`/gu, '')
-    .replace(/https?:\/\/\S+/gu, 'リンク').replace(/<[^>]*>/gu, '')
+    .replace(/https?:\/\/\S+/giu, 'リンク').replace(/<[^>]*>/gu, '')
     .replace(/[*_~#]/gu, '').trim();
 }
