@@ -83,3 +83,13 @@ test('private shutdown verifies the fixed session then closes it without a new D
   assert.equal((await f.service.handler(shutdown({...scope,sessionId:'wrong'}))).status,403);assert.equal(f.ends(),0);
   assert.equal((await f.service.handler(shutdown({...scope,sessionId}))).status,200);assert.equal(f.ends(),1);assert.deepEqual(f.calls,[]);
 });
+
+test('status command and speech-phase health observation do not extend the idle deadline', async () => {
+  const f = fixture(); f.setNow(NOW + 299_000);
+  await f.service.handler(request(command(1, 'voice-status')));
+  assert.equal(f.service.idleAt, NOW + 300_000);
+  const body = await (await f.service.handler(new Request('http://bot.internal/health'))).json();
+  assert.equal(body.speechPhase, 'disconnected');
+  assert.equal(f.service.idleAt, NOW + 300_000);
+  f.setNow(NOW + 300_000); assert.equal(f.service.checkIdle(), true);
+});

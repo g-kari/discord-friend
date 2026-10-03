@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { SPEECH_LABELS } from '../../../apps/voice/src/speech-status.js';
 
 // This exercises production index.ts and real SQLite. The SDK/container fixture
 // models stop-event reconciliation explicitly; it makes no claims about live
@@ -38,6 +39,8 @@ const sdk = `
       this.ctx.starts++;
       this.ctx.container.running = true;
       this.ctx.actualSession = options.startOptions.envVars.VOICE_SESSION_ID;
+      this.ctx.startedScope = { guildId: options.startOptions.envVars.DISCORD_GUILD_ID,
+        channelId: options.startOptions.envVars.DISCORD_TEXT_CHANNEL_ID, mode: options.startOptions.envVars.DISCORD_SCOPE_MODE };
     }
     async destroy() { this.ctx.destroys++; this.ctx.container.running = false; }
     async stop() {
@@ -66,6 +69,10 @@ const built = await build({
         return { contents: source.replace(/(APPROVED_SCOPE_FINGERPRINT = ')[a-f0-9]+(')/,
           (_: string, prefix: string, suffix: string) => prefix + approved + suffix), loader: 'ts' };
       });
+      builder.onLoad({ filter: /scope-policy\.ts$/ }, (args: { path: string }) => ({
+        contents: readFileSync(args.path, 'utf8').replace(/(APPROVED_PRINCIPAL = ')[a-f0-9]+(')/,
+          '$1' + createHash('sha256').update([scope.DISCORD_APPLICATION_ID, scope.DISCORD_OWNER_ID].join(':')).digest('hex') + '$2'), loader: 'ts',
+      }));
     },
   }],
 });
@@ -75,7 +82,7 @@ function context() {
   const db = new DatabaseSync(':memory:');
   const ctx = {
     starts: 0, destroys: 0, stops: 0, schedules: [] as any[],
-    pendingStop: false, actualSession: null as string | null, failHealth: false,
+    pendingStop: false, actualSession: null as string | null, failHealth: false, health: {} as Record<string, unknown>,
     storage: {
       sql: {
         exec(query: string, ...args: (string | number | null)[]) {
@@ -93,7 +100,7 @@ function context() {
           fetch: async () => {
             if (ctx.failHealth) throw new Error('SYNTHETIC_UNAVAILABLE');
             return Response.json({ sessionId: ctx.actualSession, ready: true, voice: 'ready',
-              queued: 0, idleAt: Date.now() + 60_000 });
+              queued: 0, idleAt: Date.now() + 60_000, ...ctx.health });
           },
         };
       },
@@ -105,6 +112,96 @@ const session = () => ({ id: newId, status: 'starting', controlId: '100000000000
   deadline: NOW + 240_000, createdAt: NOW });
 const speech = () => new Request('http://tts.internal/v1/speech', {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"text":"synthetic"}',
+});
+
+test('installed adapter binds startup, private invocation and shutdown to the image generation scope', async () => {
+  const f = context(); const scopeA = { applicationId: scope.DISCORD_APPLICATION_ID, userId: scope.DISCORD_OWNER_ID,
+    guildId: '100000000000000012', channelId: '100000000000000013' };
+  const calls: Record<string, unknown>[] = [];
+  f.ctx.container.getTcpPort = () => ({ fetch: async (input: any, init: any) => {
+    const request = new Request(input, init);
+    if (new URL(request.url).pathname === '/health') return Response.json({ sessionId: f.ctx.actualSession, ready: true, voice: 'ready' });
+    calls.push(await request.json() as Record<string, unknown>);
+    return Response.json({ content: 'ok', joined: true });
+  } }) as any;
+  try {
+    const bot = new DiscordBot(f.ctx, { ...env, DISCORD_SCOPE_MODE: 'installed-guilds' });
+    const active = { ...session(), id: oldId, scope: scopeA }; bot.commandLedger.setSession(active);
+    await bot.startSession(active, new AbortController().signal);
+    assert.deepEqual((f.ctx as any).startedScope, { guildId: scopeA.guildId, channelId: scopeA.channelId, mode: 'installed-guilds' });
+    assert.deepEqual(bot.imageScope(oldId), scopeA);
+    await assert.rejects(bot.invokeCommand({ ...scopeA, channelId: scope.DISCORD_TEXT_CHANNEL_ID, sessionId: oldId, name: 'stop', id: active.controlId }, new AbortController().signal), /SESSION_STOPPED/);
+    assert.deepEqual(calls, []);
+    bot.commandLedger.setSession({ ...active, id: newId, status: 'stopped', scope: { ...scopeA, guildId: '100000000000000022', channelId: '100000000000000023' } });
+    await bot.destroySession(newId);
+    assert.deepEqual(calls, [{ sessionId: oldId, ...scopeA }]);
+    assert.equal(f.ctx.starts, 1); assert.equal(f.ctx.destroys, 1);
+  } finally { f.db.close(); }
+});
+
+test('installed owner voice choice never applies to another author or expired session', async () => {
+  const f = context();
+  try {
+    const bot = new DiscordBot(f.ctx, { ...env, DISCORD_SCOPE_MODE: 'installed-guilds' });
+    bot.commandLedger.setSession({ ...session(), status: 'ready', scope: {
+      applicationId: scope.DISCORD_APPLICATION_ID, userId: scope.DISCORD_OWNER_ID,
+      guildId: '100000000000000012', channelId: '100000000000000013',
+    } });
+    await bot.ownerModel.command([{ id: 8, name: '声', style: 'ノーマル' }], { id: '100000000000000030', speakerId: 8 }, new AbortController().signal);
+    assert.equal(await bot.getSpeechModel(newId, scope.DISCORD_OWNER_ID), 8);
+    assert.equal(await bot.getSpeechModel(newId, '100000000000000099'), undefined);
+    assert.equal(await bot.getSpeechModel(oldId, scope.DISCORD_OWNER_ID), undefined);
+  } finally { f.db.close(); }
+});
+
+test('installed-mode housekeeping reclaims an unscoped legacy generation without startup', async () => {
+  const f = context();
+  try {
+    const bot = new DiscordBot(f.ctx, { ...env, DISCORD_SCOPE_MODE: 'installed-guilds' });
+    bot.commandLedger.setSession({ ...session(), status: 'ready' });
+    bot.setImageLease(newId); f.ctx.actualSession = newId; f.ctx.container.running = true;
+    await bot.sweepCommandJobs();
+    assert.equal(bot.commandLedger.session().status, 'stopped'); assert.equal(f.ctx.starts, 0);
+    assert.ok(f.ctx.destroys > 0); assert.equal(bot.imageLease(), null);
+  } finally { f.db.close(); }
+});
+
+test('voice status renders fixed speech phases without starting or touching either runtime', async () => {
+  const f = context();
+  try {
+    const bot = new DiscordBot(f.ctx, env);
+    bot.commandLedger.setSession({ ...session(), status: 'ready' });
+    bot.setImageLease(newId); f.ctx.actualSession = newId; f.ctx.container.running = true;
+    const before = bot.commandLedger.session();
+    for (const [phase, label] of Object.entries(SPEECH_LABELS)) {
+      f.ctx.health = { speechPhase: phase, queued: 3 };
+      assert.equal(await bot.sessionStatus(newId), `${label} / 待機: 3件`);
+    }
+    assert.equal(f.ctx.starts, 0); assert.deepEqual(f.ctx.schedules, []);
+    assert.deepEqual(bot.commandLedger.session(), before);
+  } finally { f.db.close(); }
+});
+test('voice status falls back for old or invalid health and never relays arbitrary status text', async () => {
+  const f = context();
+  try {
+    const bot = new DiscordBot(f.ctx, env);
+    f.ctx.actualSession = newId; f.ctx.container.running = true;
+    for (const phase of [undefined, null, '', 'toString', '__proto__', 'unknown', 'synthetic_private_status', {}, 'x'.repeat(1000)]) {
+      f.ctx.health = { speechPhase: phase, queued: 2 };
+      assert.equal(await bot.sessionStatus(newId), '音声接続: 接続中 / 待機: 2');
+    }
+    for (const queued of [-1, 1.5, '3', Number.MAX_SAFE_INTEGER + 1, null]) {
+      f.ctx.health = { speechPhase: 'idle', queued };
+      assert.equal(await bot.sessionStatus(newId), '読み上げ待機中 / 待機: 0件');
+    }
+    f.ctx.health = { ready: false, speechPhase: 'speaking' };
+    assert.equal(await bot.sessionStatus(newId), 'Gateway接続を確認できません');
+    f.ctx.health = { sessionId: oldId, speechPhase: 'speaking' };
+    assert.equal(await bot.sessionStatus(newId), '現在は未接続です');
+    f.ctx.health = { speechPhase: 'speaking' }; f.ctx.container.running = false;
+    assert.equal(await bot.sessionStatus(newId), '現在は未接続です');
+    assert.equal(f.ctx.starts, 0); assert.deepEqual(f.ctx.schedules, []);
+  } finally { f.db.close(); }
 });
 
 test('production adapters reclaim ended resources without implicit starts', async t => {
@@ -525,5 +622,65 @@ test('production outbound speech applies the saved voice to owner messages only 
     }
     assert.equal(forwarded[0].headers.get('x-voice-speaker-id'), '8'); assert.equal(forwarded[1].headers.get('x-voice-speaker-id'), null);
     assert.equal(forwarded[0].headers.get('x-voice-author-id'), null); assert.equal(await forwarded[0].text(), '{"text":"synthetic"}');
+  } finally { f.db.close(); }
+});
+
+const dailyEnv = { ...env, VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '', VOICE_SESSION_MINUTES: '30' };
+test('daily Bot startup requires a persisted reservation, not just a fabricated session', async () => {
+  const f = context();
+  try {
+    const bot = new DiscordBot(f.ctx, dailyEnv); bot.commandLedger.setSession(session());
+    await assert.rejects(bot.startSession(session(), new AbortController().signal), /SESSION_STOPPED/);
+    assert.equal(f.ctx.starts, 0);
+    bot.commandLedger.usage.reserve(newId, Date.now(), session().deadline);
+    await bot.startSession(session(), new AbortController().signal);
+    assert.equal(f.ctx.starts, 1);
+  } finally { f.db.close(); }
+});
+test('daily usage is refunded only after both Bot and TTS resource cleanup, never on process exit or failed destroy', async () => {
+  const f = context(); let ttsFailure = false;
+  const guardedEnv = { ...dailyEnv, VOICEVOX: { getByName: () => ({ stopSession: async () => {
+    if (ttsFailure) throw new Error('SYNTHETIC_TTS_CLEANUP_FAILED');
+  } }) } };
+  try {
+    const bot = new DiscordBot(f.ctx, guardedEnv);
+    const admittedAt = Date.now() - 60_000;
+    bot.commandLedger.usage.reserve(newId, admittedAt, session().deadline);
+    bot.commandLedger.setSession({ ...session(), status: 'stopped' }); bot.setImageLease(newId);
+    const before = bot.commandLedger.usage.remaining(admittedAt);
+    await bot.onStop();
+    assert.equal(bot.commandLedger.usage.remaining(admittedAt), before, 'process exit is not resource reclamation');
+    bot.destroy = async () => { throw new Error('SYNTHETIC_DESTROY_FAILED'); };
+    await assert.rejects(bot.destroySession(newId), /SYNTHETIC_DESTROY_FAILED/);
+    assert.equal(bot.commandLedger.usage.reservation().state, 'reserved');
+    bot.destroy = async () => { f.ctx.container.running = false; }; ttsFailure = true;
+    await assert.rejects(bot.destroySession(newId), /SYNTHETIC_TTS_CLEANUP_FAILED/);
+    assert.equal(bot.commandLedger.usage.remaining(admittedAt), before);
+    const restart = new DiscordBot(f.ctx, guardedEnv);
+    ttsFailure = false; await restart.destroySession(newId);
+    assert.equal(restart.commandLedger.usage.reservation().state, 'settled');
+    const remaining = restart.commandLedger.usage.remaining(admittedAt);
+    assert.ok(remaining > before && remaining <= 59 * 60_000);
+    await restart.destroySession(newId);
+    assert.equal(restart.commandLedger.usage.remaining(admittedAt), remaining, 'cleanup retries cannot refund twice');
+    assert.equal(f.ctx.starts, 0);
+  } finally { f.db.close(); }
+});
+test('daily TTS rejects RSS and unreserved Discord requests while retaining independently bounded valid leases', async () => {
+  const f = context(); let admitted = false; const deadline = Date.now() + 60_000;
+  const guardedEnv = { ...dailyEnv, BOT: { getByName: () => ({ getSpeechLease: async () => admitted ? { deadline } : null }) } };
+  try {
+    const tts = new Voicevox(f.ctx, guardedEnv);
+    assert.equal((await tts.scopedSpeech(speech(), 'rss-service-binding', deadline)).status, 503);
+    assert.equal((await tts.scopedSpeech(speech(), newId, deadline)).status, 503);
+    assert.equal(f.ctx.starts, 0);
+    admitted = true;
+    assert.equal((await tts.scopedSpeech(speech(), newId, deadline)).status, 200);
+    await tts.reconcileExpiredLease();
+    assert.equal(tts.lease, newId);
+    assert.equal(f.ctx.starts, 1);
+    await tts.stopSession(newId);
+    assert.equal((await tts.scopedSpeech(speech(), newId, deadline)).status, 503);
+    assert.equal(f.ctx.starts, 1);
   } finally { f.db.close(); }
 });
