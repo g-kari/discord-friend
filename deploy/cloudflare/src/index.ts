@@ -5,8 +5,10 @@ import { SqlSetupLedger, saveReadiness } from './setup-ledger';
 import { inspectReadiness, runtimeActive } from './readiness';
 import { receiveInteraction, type InteractionCommand } from './interactions';
 import { InteractionLedger, type VoiceSession } from './interaction-ledger';
-import { SessionCommands, commandRuntimeActive, type ContainerCommand, type CommandResult } from './session-commands';
+import { SessionCommands, commandRuntimeActive, modelMetadataActive, type ContainerCommand, type CommandResult } from './session-commands';
 import { privateJson } from './private-http';
+import { scopeFingerprint } from './guild-setup';
+import { VoiceCatalogStore, OwnerVoiceSelection, type VoiceModel } from './voice-models';
 export { ContainerProxy } from '@cloudflare/containers';
 
 function trialActive(env: Env): boolean {
@@ -36,6 +38,8 @@ export class Voicevox extends Container<Env> {
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS voice_tts_revoked (session_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)');
     return this.ctx.storage.sql.exec<{ expires_at: number }>('SELECT expires_at FROM voice_tts_revoked WHERE session_id=?', sessionId).toArray().some(row => row.expires_at > Date.now());
   }
+  private modelCatalog = new VoiceCatalogStore(this.ctx.storage);
+  async getModelCatalog(): Promise<VoiceModel[] | null> { return this.modelCatalog.get(); }
   private speechAbort: AbortController | null = null;
   async scopedSpeech(request: Request, sessionId: string, deadline: number): Promise<Response> {
     if (!trialActive(this.env) || deadline <= Date.now() || deadline > Date.parse(this.env.VOICE_DEADLINE) || this.revoked(sessionId)) return new Response(null, { status: 503 });
@@ -55,7 +59,20 @@ export class Voicevox extends Container<Env> {
         cancellationOptions: { abort: signal, instanceGetTimeoutMS: 20_000, portReadyTimeoutMS: 30_000 } });
       signal.throwIfAborted();
       if (this.lease !== sessionId || this.revoked(sessionId)) throw new Error('SESSION_STOPPED');
-      return await this.ctx.container!.getTcpPort(8080).fetch(new Request(request, { signal }));
+      const response = await this.ctx.container!.getTcpPort(8080).fetch(new Request(request, { signal }));
+      // Learn only from an already-authorized speech attempt. The adapter's
+      // catalog endpoint is memory-only and never makes an engine request.
+      if (!signal.aborted && this.ctx.container?.running && this.lease === sessionId && !this.revoked(sessionId)) {
+        try {
+          const metadataSignal = AbortSignal.any([signal, AbortSignal.timeout(3000)]);
+          const metadata = await this.ctx.container.getTcpPort(8080).fetch('http://tts.internal/v1/models', { signal: metadataSignal, redirect: 'manual' });
+          if (metadata.ok) {
+            const value = await privateJson(metadata, 256 * 1024, metadataSignal);
+            if (!signal.aborted && this.lease === sessionId && !this.revoked(sessionId)) await this.modelCatalog.save(value.catalog);
+          } else await metadata.body?.cancel();
+        } catch { /* Metadata failure does not turn valid audio into failure. */ }
+      }
+      return response;
     } catch {
       if (this.lease === sessionId) { this.setLease(null); await this.destroy().catch(() => {}); }
       return Response.json({ error: 'VOICE_SERVICE_UNAVAILABLE' }, { status: 503, headers: { 'cache-control': 'no-store' } });
@@ -84,6 +101,7 @@ export class DiscordBot extends Container<Env> {
     BOT_ENABLED: 'false', VOICE_DEADLINE: '',
   };
   private commandLedger = new InteractionLedger(this.ctx.storage);
+  private ownerModel = new OwnerVoiceSelection(this.ctx.storage, scopeFingerprint(this.env));
   private mutation: Promise<void> = Promise.resolve();
   private imageLease(): string | null {
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS voice_bot_image_lease (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT)');
@@ -97,6 +115,7 @@ export class DiscordBot extends Container<Env> {
     start: (session, signal) => this.startSession(session, signal),
     invoke: (command, signal) => this.invokeCommand(command, signal),
     status: sessionId => this.sessionStatus(sessionId),
+    model: (command, signal) => this.modelCommand(command, signal),
     destroy: sessionId => this.destroySession(sessionId),
     scheduleJob: async id => { await this.schedule(1, 'runCommandJob', { id }); },
     scheduleExpiry: async session => { await this.schedule(new Date(Math.ceil(session.deadline/1000)*1000), 'expireCommandSession', { sessionId: session.id }); },
@@ -217,6 +236,19 @@ export class DiscordBot extends Container<Env> {
   }
   async sweepCommandJobs(): Promise<void> { await this.commands.sweep(); }
   async getSpeechLease(sessionId: string): Promise<VoiceSession | null> { return this.commands.speechLease(sessionId); }
+  async getSpeechModel(sessionId: string, authorId: string): Promise<number | undefined> {
+    if (!this.commands.speechLease(sessionId) || authorId !== this.env.DISCORD_OWNER_ID) return undefined;
+    return this.ownerModel.get();
+  }
+  private async modelCommand(command: InteractionCommand, signal: AbortSignal): Promise<string> {
+    if (!modelMetadataActive(this.env) || command.applicationId !== this.env.DISCORD_APPLICATION_ID ||
+        command.guildId !== this.env.DISCORD_GUILD_ID || command.channelId !== this.env.DISCORD_TEXT_CHANNEL_ID ||
+        command.userId !== this.env.DISCORD_OWNER_ID) throw new Error('MODEL_SCOPE_MISMATCH');
+    signal.throwIfAborted();
+    const catalog = await this.env.VOICEVOX.getByName('shared-voicevox').getModelCatalog();
+    signal.throwIfAborted();
+    return this.ownerModel.command(catalog, command, signal);
+  }
   async setupGuildCommands() {
     return runGuildSetup(this.env, new SqlSetupLedger(this.ctx.storage), () => this.ctx.container?.running ?? false);
   }
@@ -237,7 +269,18 @@ async function speech(request: Request, env: Env, sessionId?: string): Promise<R
   try {
     const lease = sessionId ? await env.BOT.getByName('discord-singleton').getSpeechLease(sessionId) : null;
     if (sessionId && !lease) return new Response(null, { status: 503 });
-    return await env.VOICEVOX.getByName('shared-voicevox').scopedSpeech(request, sessionId ?? 'rss-service-binding', lease?.deadline ?? Date.parse(env.VOICE_DEADLINE));
+    // Never trust a caller-supplied style header. RSS and non-owner Discord
+    // authors keep the named default; only the owner's durable choice applies.
+    const forwardedHeaders = new Headers(request.headers);
+    forwardedHeaders.delete('x-voice-speaker-id');
+    if (sessionId) {
+      const authorId = request.headers.get('x-voice-author-id') ?? '';
+      if (!/^\d{17,20}$/.test(authorId)) return new Response(null, { status: 400 });
+      const speakerId = await env.BOT.getByName('discord-singleton').getSpeechModel(sessionId, authorId);
+      if (speakerId !== undefined) forwardedHeaders.set('x-voice-speaker-id', String(speakerId));
+    }
+    forwardedHeaders.delete('x-voice-author-id');
+    return await env.VOICEVOX.getByName('shared-voicevox').scopedSpeech(new Request(request, { headers: forwardedHeaders }), sessionId ?? 'rss-service-binding', lease?.deadline ?? Date.parse(env.VOICE_DEADLINE));
   } catch {
     return Response.json({ error: 'VOICE_SERVICE_UNAVAILABLE' }, { status: 503, headers: { 'cache-control': 'no-store' } });
   }

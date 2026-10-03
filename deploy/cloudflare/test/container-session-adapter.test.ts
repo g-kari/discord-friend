@@ -209,3 +209,76 @@ test('production Container adapter reconciles ownership and persistent TTS revoc
     } finally { f.db.close(); }
   });
 });
+
+const models = [{ id: 999, name: '春日部つむぎ', style: 'ノーマル' }, { id: 8, name: 'ずんだもん', style: 'あまあま' }];
+const modelCommand = (n: number, speakerId?: number) => ({ id: String(100000000000000000n + BigInt(n)),
+  applicationId: scope.DISCORD_APPLICATION_ID, guildId: scope.DISCORD_GUILD_ID,
+  channelId: scope.DISCORD_TEXT_CHANNEL_ID, userId: scope.DISCORD_OWNER_ID, name: 'model',
+  ...(speakerId === undefined ? {} : { speakerId }) });
+
+test('production model command stays offline, validates owner scope and persists the owner choice across restarts', async () => {
+  const f = context(); const tts = new Voicevox(f.ctx, env);
+  const modelEnv = { ...env, BOT_ENABLED: 'false', VOICE_DEADLINE: '', VOICEVOX: { getByName: () => tts } };
+  try {
+    const bot = new DiscordBot(f.ctx, modelEnv);
+    assert.match(await bot.modelCommand(modelCommand(30), new AbortController().signal), /一覧はまだありません/);
+    assert.equal(f.ctx.starts, 0); assert.equal(f.ctx.destroys, 0);
+    await tts.modelCatalog.save(models);
+    assert.match(await bot.modelCommand(modelCommand(31, 8), new AbortController().signal), /ずんだもん/);
+    assert.equal(f.ctx.starts, 0);
+    const resumed = new DiscordBot(f.ctx, { ...modelEnv, BOT_ENABLED: env.BOT_ENABLED, VOICE_DEADLINE: env.VOICE_DEADLINE }); resumed.commandLedger.setSession({ ...session(), status: 'ready' });
+    assert.equal(await resumed.getSpeechModel(newId, scope.DISCORD_OWNER_ID), 8);
+    assert.equal(await resumed.getSpeechModel(newId, '100000000000000099'), undefined);
+    assert.equal(await resumed.getSpeechModel(oldId, scope.DISCORD_OWNER_ID), undefined);
+    assert.match(await resumed.modelCommand(modelCommand(32, 1234), new AbortController().signal), /一覧にありません/);
+    assert.equal(await resumed.getSpeechModel(newId, scope.DISCORD_OWNER_ID), 8);
+    await assert.rejects(resumed.modelCommand({ ...modelCommand(33, 999), userId: '100000000000000099' }, new AbortController().signal), /MODEL_SCOPE_MISMATCH/);
+    assert.equal(f.ctx.starts, 0);
+  } finally { f.db.close(); }
+});
+test('catalog is learned from an authorized speech attempt and remains available after the TTS image stops', async () => {
+  const f = context(); let fetches = 0;
+  f.ctx.container.getTcpPort = () => ({ fetch: async (input: any) => {
+    fetches++; const path = new URL(typeof input === 'string' ? input : input.url).pathname;
+    if (path === '/v1/models') return Response.json({ catalog: models });
+    assert.equal(path, '/v1/speech'); return new Response('synthetic-audio');
+  } });
+  try {
+    const tts = new Voicevox(f.ctx, env); assert.equal(await tts.getModelCatalog(), null); assert.equal(fetches, 0);
+    assert.equal((await tts.scopedSpeech(speech(), newId, NOW + 240_000)).status, 200);
+    assert.equal(fetches, 2); assert.equal(f.ctx.starts, 1);
+    f.ctx.container.running = false;
+    const restored = new Voicevox(f.ctx, env); assert.deepEqual(await restored.getModelCatalog(), models);
+    assert.equal(f.ctx.starts, 1); assert.equal(fetches, 2);
+  } finally { f.db.close(); }
+});
+test('cancelled model metadata lookup cannot persist a new selection or stop a voice session', async () => {
+  const f = context(); let release: any;
+  const catalog = new Promise(resolve => { release = resolve; });
+  const modelEnv = { ...env, VOICEVOX: { getByName: () => ({ getModelCatalog: () => catalog }) } };
+  try {
+    const bot = new DiscordBot(f.ctx, modelEnv); bot.commandLedger.setSession({ ...session(), status: 'ready' });
+    const controller = new AbortController(); const work = bot.modelCommand(modelCommand(31, 8), controller.signal);
+    controller.abort(); release(models); await assert.rejects(work);
+    assert.equal(bot.ownerModel.get(), undefined); assert.equal(bot.commandLedger.session().status, 'ready');
+    assert.equal(f.ctx.starts, 0); assert.equal(f.ctx.destroys, 0);
+  } finally { f.db.close(); }
+});
+test('production outbound speech applies the saved voice to owner messages only and strips forged style headers', async () => {
+  const f = context(); const forwarded: Request[] = [];
+  try {
+    const bot = new DiscordBot(f.ctx, env); bot.commandLedger.setSession({ ...session(), status: 'ready' });
+    await bot.ownerModel.command(models, modelCommand(31, 8), new AbortController().signal);
+    const routedEnv = { ...env,
+      BOT: { idFromName: () => ({ toString: () => 'synthetic-bot-id' }), getByName: () => bot },
+      VOICEVOX: { getByName: () => ({ scopedSpeech: async (request: Request) => { forwarded.push(request); return new Response('audio'); } }) },
+    };
+    for (const authorId of [scope.DISCORD_OWNER_ID, '100000000000000099']) {
+      const request = new Request('http://tts.internal/v1/speech', { method: 'POST', body: '{"text":"synthetic"}',
+        headers: { 'content-type': 'application/json', 'x-voice-session-id': newId, 'x-voice-author-id': authorId, 'x-voice-speaker-id': '111' } });
+      assert.equal((await DiscordBot.outboundByHost['tts.internal'](request, routedEnv, { className: 'DiscordBot', containerId: 'synthetic-bot-id' })).status, 200);
+    }
+    assert.equal(forwarded[0].headers.get('x-voice-speaker-id'), '8'); assert.equal(forwarded[1].headers.get('x-voice-speaker-id'), null);
+    assert.equal(forwarded[0].headers.get('x-voice-author-id'), null); assert.equal(await forwarded[0].text(), '{"text":"synthetic"}');
+  } finally { f.db.close(); }
+});

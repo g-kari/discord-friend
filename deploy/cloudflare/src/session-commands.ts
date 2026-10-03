@@ -18,11 +18,20 @@ export interface CommandRuntime {
   start(session: VoiceSession, signal: AbortSignal): Promise<void>;
   invoke(command: ContainerCommand, signal: AbortSignal): Promise<CommandResult>;
   status(sessionId: string): Promise<string>;
+  model?(command: InteractionCommand, signal: AbortSignal): Promise<string>;
   destroy(sessionId: string): Promise<void>;
   scheduleJob(id: string): Promise<void>;
   scheduleExpiry(session: VoiceSession): Promise<void>;
   scheduleSweep(): Promise<void>;
   scheduleStop(sessionId: string): Promise<void>;
+}
+// Model metadata is independent of voice startup/fees/deadlines. The HTTP
+// endpoint and immutable scope stay authorized; the existing secret only seals
+// short-lived interaction jobs and is never sent to the model catalog.
+export function modelMetadataActive(env: CommandEnv, approved = APPROVED_SCOPE_FINGERPRINT): boolean {
+  return env.DISCORD_HTTP_ENABLED === 'true' && Boolean(env.DISCORD_BOT_TOKEN) &&
+    [env.DISCORD_APPLICATION_ID, env.DISCORD_GUILD_ID, env.DISCORD_TEXT_CHANNEL_ID, env.DISCORD_OWNER_ID].every(id => /^\d{17,20}$/.test(id)) &&
+    scopeFingerprint(env) === approved;
 }
 export function commandRuntimeActive(env: CommandEnv, now: number = Date.now(), approved = APPROVED_SCOPE_FINGERPRINT): boolean {
   const idle = Number(env.VOICE_IDLE_SECONDS), minutes = Number(env.VOICE_SESSION_MINUTES);
@@ -43,7 +52,7 @@ export class SessionCommands {
     this.env = env; this.ledger = ledger; this.runtime = runtime; this.request = request; this.now = now; this.approved = approved;
   }
   private valid(command: InteractionCommand): boolean {
-    return commandRuntimeActive(this.env, this.now(), this.approved) && command.applicationId === this.env.DISCORD_APPLICATION_ID &&
+    return (command.name === 'model' ? modelMetadataActive(this.env, this.approved) : commandRuntimeActive(this.env, this.now(), this.approved)) && command.applicationId === this.env.DISCORD_APPLICATION_ID &&
       command.guildId === this.env.DISCORD_GUILD_ID && command.channelId === this.env.DISCORD_TEXT_CHANNEL_ID && command.userId === this.env.DISCORD_OWNER_ID;
   }
   async enqueue(command: InteractionCommand): Promise<void> {
@@ -79,7 +88,7 @@ export class SessionCommands {
     await this.runtime.scheduleSweep();
     const cipher = await sealCommand(command, this.env.DISCORD_BOT_TOKEN);
     const now = this.now();
-    const deadline = Math.min(Date.parse(this.env.VOICE_DEADLINE), now + Number(this.env.VOICE_SESSION_MINUTES) * 60_000);
+    const deadline = command.name === 'model' ? now + 90_000 : Math.min(Date.parse(this.env.VOICE_DEADLINE), now + Number(this.env.VOICE_SESSION_MINUTES) * 60_000);
     const claim = this.ledger.accept(command, cipher, now, deadline);
     await this.ledger.sync();
     if (!claim.accepted) {
@@ -159,7 +168,9 @@ export class SessionCommands {
       if (!this.valid(command) || job.expiresAt <= this.now()) { content = '現在は停止中です'; outcome = 'cancelled'; }
       else {
         let session = this.current(job.sessionId);
-        if (command.name === 'join') {
+        if (command.name === 'model') {
+          content = this.runtime.model ? await this.runtime.model(command, signal) : '声の変更は利用できません';
+        } else if (command.name === 'join') {
           if (!session || session.status === 'stopped' || session.controlId !== command.id) { content = '接続を中止しました'; outcome = 'cancelled'; }
           else {
             this.starts.set(id, controller);
@@ -194,7 +205,7 @@ export class SessionCommands {
       outcome = signal.aborted ? 'cancelled' : 'failed';
       const session = this.current(job.sessionId);
       // An older failing join must not tear down a newer join/voice session.
-      if (session && (command.name !== 'join' || session.controlId === command.id)) {
+      if (session && command.name !== 'model' && (command.name !== 'join' || session.controlId === command.id)) {
         await this.stopped(session.id);
         await this.runtime.destroy(session.id).catch(() => {});
       }

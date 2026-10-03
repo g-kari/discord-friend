@@ -52,7 +52,7 @@ test('all upstream failures fail visibly instead of beep or silent WAV', async (
   }
 });
 test('missing selected voice is an actionable error, not another voice', async () => {
-  const engine = fakeEngine({ '/speakers': () => Response.json([{ name: '別の声', styles: [{ id: 8 }] }]) });
+  const engine = fakeEngine({ '/speakers': () => Response.json([{ name: '別の声', styles: [{ name: 'ノーマル', id: 8 }] }]) });
   await assert.rejects(createSynthesizer(engine)({ text: 'hello' }), { code: 'VOICE_NOT_AVAILABLE' });
   assert.equal(engine.calls.length, 1);
 });
@@ -159,4 +159,37 @@ test('cancellation during query skips synthesis once the query has completed', a
   await assert.rejects(running, { code: 'SYNTHESIS_CANCELLED_OR_TIMED_OUT' });
   assert.equal(engine.calls.length, 2);
   assert.equal((await synth({ text: 'next request' })).contentType, 'audio/wav');
+});
+
+test('selected installed style is used for query and synthesis with matching credit, while default remains unchanged', async () => {
+  const catalog = [{ name: '春日部つむぎ', styles: [{ name: 'ノーマル', id: 999 }] },
+    { name: 'ずんだもん', styles: [{ name: 'あまあま', id: 8 }] }];
+  const engine = fakeEngine({ '/speakers': () => Response.json(catalog) }); const synth = createSynthesizer(engine);
+  assert.equal(synth.catalog(), null);
+  const selected = await synth({ text: 'こんにちは' }, undefined, { speakerId: 8 });
+  assert.equal(selected.credit, 'VOICEVOX:ずんだもん（あまあま）');
+  assert.equal(engine.calls[1].url.searchParams.get('speaker'), '8'); assert.equal(engine.calls[2].url.searchParams.get('speaker'), '8');
+  assert.deepEqual(synth.catalog(), [{ id: 999, name: '春日部つむぎ', style: 'ノーマル' }, { id: 8, name: 'ずんだもん', style: 'あまあま' }]);
+  const copy = synth.catalog(); copy[0].id = 1; assert.equal(synth.catalog()[0].id, 999);
+  assert.equal((await synth({ text: '既定' })).credit, 'VOICEVOX:春日部つむぎ');
+  assert.equal(engine.calls[4].url.searchParams.get('speaker'), '999');
+});
+test('invalid selected IDs never call the engine and a removed style is checked before any synthesis', async () => {
+  const engine = fakeEngine(); const synth = createSynthesizer(engine);
+  for (const speakerId of [-1, 0.5, '8', NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(synth({ text: 'x' }, undefined, { speakerId }), { code: 'INVALID_SPEAKER' });
+  }
+  assert.equal(engine.calls.length, 0);
+  await assert.rejects(synth({ text: 'x' }, undefined, { speakerId: 8 }), { code: 'VOICE_NOT_AVAILABLE' });
+  assert.equal(engine.calls.length, 1);
+});
+test('selected-style cancellation holds admission and discards the result without switching voice', async () => {
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  const engine = fakeEngine({ '/synthesis': async () => { await gate; return new Response(wav()); } });
+  const synth = createSynthesizer(engine); const controller = new AbortController();
+  const running = synth({ text: '取り消す声' }, controller.signal, { speakerId: 999 });
+  while (engine.calls.length < 3) await delay(1);
+  controller.abort(); await assert.rejects(synth({ text: '重複' }, undefined, { speakerId: 999 }), { code: 'SYNTHESIS_BUSY' });
+  release(); await assert.rejects(running, { code: 'SYNTHESIS_CANCELLED_OR_TIMED_OUT' });
+  assert.equal(engine.calls[2].url.searchParams.get('speaker'), '999');
 });

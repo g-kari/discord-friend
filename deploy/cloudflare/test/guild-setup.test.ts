@@ -59,13 +59,13 @@ function discord(initial: unknown[] = []) {
   return { request, calls, existing };
 }
 
-test('creates exactly five known guild commands, preserves unrelated commands, and persists a secret-free receipt', async () => {
+test('creates exactly six known guild commands, preserves unrelated commands, and persists a secret-free receipt', async () => {
   const store = storage(); const network = discord([{ type: 1, name: 'unrelated', description: 'Leave this alone' }]);
   const receipt = await runGuildSetup(environment(), store.ledger, () => false, network.request, () => NOW);
   assert.equal(receipt.state, 'complete');
   assert.deepEqual(receipt.verifiedNames, COMMANDS.map(command => command.name));
   assert.deepEqual(network.calls.filter(call => call.method === 'POST').map(call => (call.body as { name: string }).name), COMMANDS.map(command => command.name));
-  assert.equal(network.existing.length, 6); assert.ok(store.syncs() >= 12);
+  assert.equal(network.existing.length, COMMANDS.length + 1); assert.ok(store.syncs() >= 12);
   assert.doesNotMatch(JSON.stringify(store.db.prepare('SELECT * FROM voice_setup_receipts').all()), /synthetic-test-secret|discard-me/);
 });
 test('matching existing commands are verified without POST', async () => {
@@ -130,7 +130,7 @@ test('same operation cannot replay, even after restart or simultaneous invocatio
   const results = await Promise.all([1, 2].map(() => runGuildSetup(environment(), store.ledger, () => false, network.request, () => NOW)));
   assert.ok(results.some(result => result.state === 'complete'));
   await runGuildSetup(environment(), new SqlSetupLedger(store.value), () => false, network.request, () => NOW);
-  assert.equal(network.calls.filter(call => call.method === 'POST').length, 5);
+  assert.equal(network.calls.filter(call => call.method === 'POST').length, COMMANDS.length);
 });
 test('lost POST response is uncertain and blocks both replay and a new operation', async () => {
   const store = storage(); const network = discord();
@@ -157,7 +157,7 @@ test('unbounded/malformed API responses and failed final readback never report s
     const network = discord(); let lists = 0;
     const request: typeof fetch = async (url, options) => {
       if (mode === 'oversize') return new Response('a'.repeat(65_537)); if (mode === 'malformed') return new Response('{');
-      if (mode === 'readback' && String(url).includes('/commands?') && options?.method === 'GET' && ++lists === 7) return Response.json([]);
+      if (mode === 'readback' && String(url).includes('/commands?') && options?.method === 'GET' && ++lists === COMMANDS.length + 2) return Response.json([]);
       return network.request(url, options);
     };
     assert.notEqual((await runGuildSetup(environment(), storage().ledger, () => false, request, () => NOW)).state, 'complete');

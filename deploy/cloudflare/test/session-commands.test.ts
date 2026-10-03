@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { scopeFingerprint } from '../src/guild-setup.ts';
 import { InteractionLedger, sealCommand, openCommand } from '../src/interaction-ledger.ts';
-import { SessionCommands, commandRuntimeActive } from '../src/session-commands.ts';
+import { SessionCommands, commandRuntimeActive, modelMetadataActive } from '../src/session-commands.ts';
 import type { InteractionCommand } from '../src/interactions.ts';
 import { APPROVED_SCOPE_FINGERPRINT } from '../src/guild-setup.ts';
 import { APPROVED_BOT_SCOPE } from '../../../apps/voice/src/startup-policy.js';
@@ -159,4 +159,36 @@ test('encrypted payload cannot be opened when asynchronous key/decryption crosse
   corrupted.db.prepare('UPDATE voice_interaction_jobs SET cipher=? WHERE id=?').run('invalid.cipher',snowflake(2));
   await corrupted.engine.run(snowflake(2));assert.equal(corrupted.ledger.session()?.status,'stopped');
   assert.equal(corrupted.calls.filter(call=>call.name==='start').length,0);
+});
+
+
+test('model metadata jobs work while disconnected without a bot start and remain deduplicated', async () => {
+  let models = 0;
+  const f = fixture({ model: async () => { models++; return 'VOICEVOX:合成テスト'; } });
+  const value = { ...command(2, 'model'), speakerId: 8 };
+  await f.engine.enqueue(value); await f.engine.run(value.id); await f.engine.run(value.id);
+  assert.equal(models, 1); assert.deepEqual(f.calls, []); assert.equal(f.ledger.session(), null);
+});
+test('model metadata failure or cancellation preserves an existing voice session', async () => {
+  const f = fixture({ model: async () => { throw new Error('SYNTHETIC_CATALOG_UNAVAILABLE'); } }); f.ready();
+  await f.engine.enqueue(command(2, 'model')); await f.engine.run(snowflake(2));
+  assert.equal(f.ledger.session()?.status, 'ready'); assert.deepEqual(f.calls, []);
+});
+
+
+test('model jobs alone stay available with disabled or expired voice runtime without starting or altering sessions', async () => {
+  for (const patch of [{ BOT_ENABLED: 'false', VOICE_DEADLINE: '' }, { VOICE_DEADLINE: new Date(NOW - 1).toISOString() }]) {
+    let models = 0; const f = fixture({ model: async () => { models++; return '保存済み一覧'; } });
+    const inactive = { ...env, ...patch };
+    assert.equal(commandRuntimeActive(inactive, NOW, scopeFingerprint(env)), false);
+    assert.equal(modelMetadataActive(inactive, scopeFingerprint(env)), true);
+    const engine = new SessionCommands(inactive, f.ledger, f.runtime, f.request, () => NOW, scopeFingerprint(env));
+    await engine.enqueue(command(2, 'model')); await engine.run(snowflake(2));
+    await engine.enqueue(command(3, 'join')); await engine.run(snowflake(3));
+    assert.equal(models, 1); assert.deepEqual(f.calls, []); assert.equal(f.ledger.session(), null);
+    f.db.close();
+  }
+  for (const patch of [{ DISCORD_HTTP_ENABLED: 'false' }, { DISCORD_BOT_TOKEN: '' }, { DISCORD_OWNER_ID: '100000000000000099' }]) {
+    assert.equal(modelMetadataActive({ ...env, ...patch }, scopeFingerprint(env)), false);
+  }
 });
