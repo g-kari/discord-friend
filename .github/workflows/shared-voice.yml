@@ -39,18 +39,30 @@ jobs:
           node-version: '24.19.0'
       - name: Build private synthesis image
         run: docker build -f apps/voice/Dockerfile.tts -t voice-tts-test .
+      - name: Record image layer size without starting another container
+        run: node -e 'const {execFileSync}=require("node:child_process"); const image=JSON.parse(execFileSync("docker",["image","inspect","--format","{\"id\":\"{{.Id}}\",\"layerBytes\":{{.Size}}}","voice-tts-test"],{encoding:"utf8"})); console.log(JSON.stringify({sourceSha:process.env.GITHUB_SHA,image}));'
       - name: Test real synthetic speech with no external network
         run: |
           deadline=$(node -e 'console.log(new Date(Date.now() + 5 * 60 * 1000).toISOString())')
           docker run -d --name voice-tts-test --network none -e "VOICE_DEADLINE=$deadline" voice-tts-test
           trap 'docker rm -f voice-tts-test >/dev/null 2>&1 || true' EXIT
           for attempt in $(seq 1 60); do
-            if docker exec voice-tts-test node --input-type=module -e '
-              const response = await fetch("http://127.0.0.1:8080/v1/speech", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({text:"こんにちは。音声テストです。"})});
+            if docker exec -e "VOICE_TEST_ATTEMPT=$attempt" -e "VOICE_TEST_SHA=$GITHUB_SHA" voice-tts-test node --input-type=module -e '
+              import {readFileSync} from "node:fs";
+              const numeric = value => /^\d+$/.test(value.trim()) ? Number(value.trim()) : null;
+              const read = path => { try { return readFileSync(path,"utf8"); } catch { return ""; } };
+              const cpuMicros = () => numeric(read("/sys/fs/cgroup/cpu.stat").match(/^usage_usec\s+(\d+)$/m)?.[1] ?? "");
+              const beforeCpu = cpuMicros(), startedAt = performance.now();
+              const text = "こんにちは。音声テストです。", attempt = Number(process.env.VOICE_TEST_ATTEMPT);
+              console.log(JSON.stringify({event:"tts_profile_attempt",attempt}));
+              const response = await fetch("http://127.0.0.1:8080/v1/speech", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({text,speed:1})});
               if (!response.ok) process.exit(1);
               const {assertWav} = await import("/app/src/policy.js");
               const bytes = new Uint8Array(await response.arrayBuffer()); assertWav(bytes);
-              console.log(JSON.stringify({format:"PCM16 stereo 48000Hz", bytes:bytes.length}));
+              const afterCpu = cpuMicros(), successfulRequestMs = Math.round(performance.now()-startedAt);
+              const metadata = await fetch("http://127.0.0.1:8080/v1/models").then(result => result.json());
+              const voice = metadata.catalog?.find(value => value.name === "春日部つむぎ" && value.style === "ノーマル");
+              console.log(JSON.stringify({event:"tts_reference_profile", sourceSha:process.env.VOICE_TEST_SHA, format:"PCM16 stereo 48000Hz",bytes:bytes.length,voice:voice??null,text,speed:1,attempts:attempt,successfulSynthesesObserved:1,warmRepeats:0,modelSweepExecuted:false,successfulRequestMs,containerMemoryPeakBytes:numeric(read("/sys/fs/cgroup/memory.peak")),containerCpuMicros:beforeCpu === null || afterCpu === null ? null : afterCpu-beforeCpu,allocation:"unconstrained CI baseline; not Cloudflare latency or billing"}));
             '; then exit 0; fi
             sleep 2
           done
