@@ -33,16 +33,22 @@ export class VoiceCatalogStore {
 export class OwnerVoiceSelection {
   private storage: Storage;
   private scope: string;
-  constructor(storage: Storage, scope: string) {
-    this.storage = storage; this.scope = scope;
+  private legacyScope?: string;
+  constructor(storage: Storage, scope: string, legacyScope?: string) {
+    this.storage = storage; this.scope = scope; this.legacyScope = legacyScope;
     storage.sql.exec('CREATE TABLE IF NOT EXISTS voice_owner_model (scope TEXT PRIMARY KEY, speaker_id INTEGER NOT NULL, command_id TEXT NOT NULL)');
   }
+  private migrate(): void {
+    if (this.legacyScope && this.legacyScope !== this.scope) this.storage.sql.exec('INSERT OR IGNORE INTO voice_owner_model(scope, speaker_id, command_id) SELECT ?, speaker_id, command_id FROM voice_owner_model WHERE scope=?', this.scope, this.legacyScope);
+  }
   get(): number | undefined {
+    this.migrate();
     const id = this.storage.sql.exec<{ speaker_id: number }>('SELECT speaker_id FROM voice_owner_model WHERE scope=?', this.scope).toArray()[0]?.speaker_id;
     return Number.isSafeInteger(id) && id! >= 0 ? id : undefined;
   }
   async command(catalog: VoiceModel[] | null, command: { id: string; speakerId?: number; page?: number }, signal: AbortSignal): Promise<string> {
     signal.throwIfAborted();
+    this.migrate();
     if (!catalog) return '声の一覧はまだありません。通常の読み上げが一度成功した後に /model を再実行してください（停止中の音声エンジンは起動しません）';
     catalog = validateCatalog(catalog);
     if (command.speakerId !== undefined) {

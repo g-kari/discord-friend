@@ -8,7 +8,7 @@ const headers = { 'cache-control': 'no-store', 'content-type': 'application/json
 
 /** Private token-free command ingress. HTTP interactions are acknowledged by the Worker. */
 export function createCommandService({ scope, sessionId, deadline, idleSeconds = 300,
-  ready, voiceStatus, queued, dispatch, cancelJoin, shutdown, now = Date.now }) {
+  ready, voiceStatus, queued, speechPhase = () => 'disconnected', dispatch, cancelJoin, shutdown, now = Date.now }) {
   if (!uuid(sessionId) || !Number.isFinite(deadline) || deadline <= now() || deadline - now() > 30 * 60_000 ||
       !Number.isInteger(idleSeconds) || idleSeconds < 30 || idleSeconds > 600 ||
       !['applicationId', 'guildId', 'channelId', 'userId'].every(key => snowflake(scope[key]))) throw new Error('INVALID_COMMAND_SESSION');
@@ -30,7 +30,7 @@ export function createCommandService({ scope, sessionId, deadline, idleSeconds =
     if (url.search) return new Response(null, { status: 404, headers });
     if (request.method === 'GET' && url.pathname === '/health') {
       const unavailable = checkIdle() || !ready();
-      return Response.json({ ready: !unavailable, sessionId, deadline, idleAt, voice: voiceStatus(), queued: queued() }, { status: unavailable ? 503 : 200, headers });
+      return Response.json({ ready: !unavailable, sessionId, deadline, idleAt, voice: voiceStatus(), queued: queued(), speechPhase: speechPhase() }, { status: unavailable ? 503 : 200, headers });
     }
     if (request.method !== 'POST' || !['/v1/command','/v1/shutdown'].includes(url.pathname)) return new Response(null, { status: 404, headers });
     if (checkIdle()) return Response.json({ error: 'SESSION_STOPPED' }, { status: 503, headers });
@@ -68,7 +68,7 @@ export function createCommandService({ scope, sessionId, deadline, idleSeconds =
       cancelSpeech(controlId);
       if (command.name !== 'join') cancelJoin(); // Cancellation precedes asynchronous dispatch.
     }
-    touch();
+    if (command.name !== 'voice-status') touch();
     const acceptedControl = controlId;
     const speechAbort = new AbortController();
     if (command.name === 'say') pendingSpeech.set(command.id, speechAbort);
@@ -84,7 +84,10 @@ export function createCommandService({ scope, sessionId, deadline, idleSeconds =
         if (command.name === 'join' && (ended || acceptedControl !== controlId)) return { content: '接続を中止しました', joined: false };
         if (!value || typeof value.content !== 'string' || value.content.length > 500 || typeof value.joined !== 'boolean') throw new Error('INVALID_COMMAND_RESULT');
         return value;
-      } catch { return { content: signal.aborted && command.name === 'say' ? '読み上げを中止しました' : '処理に失敗しました。接続状態を確認してください', joined: false }; }
+      } catch (error) { return { content: signal.aborted && command.name === 'say' ? '読み上げを中止しました' :
+        error?.code === 'TEXT_PERMISSION_REQUIRED' ? 'このチャンネルの閲覧・コマンド利用権限、またはBotのスレッド参加状態を確認してください' :
+        error?.code === 'VOICE_PERMISSION_REQUIRED' ? 'ボイスチャンネルの閲覧・接続権限とBotの発言権限を確認してください' :
+        '処理に失敗しました。接続状態を確認してください', joined: false }; }
     }).finally(() => { if (pendingSpeech.get(command.id) === speechAbort) pendingSpeech.delete(command.id); });
     if (seen.size < 128) seen.set(command.id, { fingerprint, result }); // Control-ID watermark protects priority stops when full.
     return Response.json(await result, { headers });
