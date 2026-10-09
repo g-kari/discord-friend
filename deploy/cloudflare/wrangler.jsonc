@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "discord-friend-voice",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+  "vars": {
+    "BOT_ENABLED": "false",
+    "DISCORD_HTTP_ENABLED": "false",
+    "DISCORD_PUBLIC_KEY": "",
+    "VOICE_IDLE_SECONDS": "300",
+    "VOICE_SESSION_MINUTES": "30",
+    "VOICE_DEADLINE": "",
+    "DISCORD_GUILD_ID": "",
+    "DISCORD_TEXT_CHANNEL_ID": "",
+    "DISCORD_OWNER_ID": "",
+    "DISCORD_APPLICATION_ID": "",
+    "CONFIRM_DISCORD_SETUP": "",
+    "DISCORD_SETUP_OPERATION_ID": "",
+    "DISCORD_SETUP_DEADLINE": ""
+  },
+  "secrets": { "required": ["DISCORD_BOT_TOKEN"] },
+  // Existing default-policy DO-backed apps support request-triggered SDK startup.
+  // Keep capacity at zero until the public endpoint and a bounded trial are approved.
+  "containers": [
+    { "name": "discord-friend-voice-discordbot", "class_name": "DiscordBot", "scheduling_policy": "default", "image": "../../apps/voice/Dockerfile.bot", "image_build_context": "../..", "instance_type": "basic", "max_instances": 0 },
+    { "name": "discord-friend-voice-voicevox", "class_name": "Voicevox", "scheduling_policy": "default", "image": "../../apps/voice/Dockerfile.tts", "image_build_context": "../..", "instance_type": "standard-1", "max_instances": 0 }
+  ],
+  "durable_objects": { "bindings": [
+    { "name": "BOT", "class_name": "DiscordBot" },
+    { "name": "VOICEVOX", "class_name": "Voicevox" }
+  ] },
+  "migrations": [{ "tag": "voice-v1", "new_sqlite_classes": ["DiscordBot", "Voicevox"] }],
+  "triggers": { "crons": ["*/5 * * * *"] }
+}

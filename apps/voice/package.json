@@ -1,0 +1,17 @@
+{
+  "name": "@discord-friend/shared-voice",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.17.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node src/check-syntax.js"
+  },
+  "dependencies": {
+    "@discordjs/voice": "0.19.2",
+    "discord.js": "14.27.0",
+    "opusscript": "0.1.1"
+  }
+}
