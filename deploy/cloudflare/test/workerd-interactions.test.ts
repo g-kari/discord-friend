@@ -123,6 +123,7 @@ const harness = `
     }
     configure(value) { Object.assign(this.fixture, value); }
     clock(value) { clock = value; }
+    async endSession() { const session = this.commandLedger.session(); await this.commands.stopped(session.id); await this.destroySession(session.id); }
     reconstructedTake(id) { return new InteractionLedger(this.ctx.storage).take(id, Date.now()); }
   }
   export class TestVoicevox extends Voicevox {}
@@ -139,6 +140,7 @@ const harness = `
         else if (path === '/test/run') await bot.runCommandJob(value);
         else if (path === '/test/sweep') await bot.sweepCommandJobs();
         else if (path === '/test/take') return Response.json(await bot.reconstructedTake(value.id));
+        else if (path === '/test/end-session') await bot.endSession();
         else if (path === '/test/expire') await bot.expireCommandSession(value);
         return Response.json({ completed: true });
       }
@@ -166,6 +168,10 @@ async function bundle(mutation?: 'unawaited-signature' | 'missing-replay-claim')
           return { contents: source.replace(/(APPROVED_SCOPE_FINGERPRINT = ')[a-f0-9]+(')/,
             (_: string, prefix: string, suffix: string) => prefix + approved + suffix), loader: 'ts' };
         });
+        builder.onLoad({ filter: /scope-policy\.ts$/ }, (args: { path: string }) => ({
+          contents: readFileSync(args.path, 'utf8').replace(/(APPROVED_PRINCIPAL = ')[a-f0-9]+(')/,
+            '$1' + createHash('sha256').update([scope.DISCORD_APPLICATION_ID, scope.DISCORD_OWNER_ID].join(':')).digest('hex') + '$2'), loader: 'ts',
+        }));
         if (mutation === 'unawaited-signature') builder.onLoad({ filter: /interactions\.ts$/ }, (args: { path: string }) => {
           const source = readFileSync(args.path, 'utf8');
           assert.ok(source.includes('!await crypto.subtle.verify'));
@@ -187,7 +193,7 @@ async function bundle(mutation?: 'unawaited-signature' | 'missing-replay-claim')
 }
 
 type OutboundCall = { url: string; method: string; authorization: string | null; body: unknown };
-async function runtime(script: string) {
+async function runtime(script: string, overrides: Record<string, string> = {}) {
   const config = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
   const compatibilityDate = config.match(/"compatibility_date"\s*:\s*"([^"]+)"/)?.[1];
   const flags = config.match(/"compatibility_flags"\s*:\s*(\[[^\]]*\])/)?.[1];
@@ -196,7 +202,7 @@ async function runtime(script: string) {
   const outbound: OutboundCall[] = [];
   let replyStatus = 200;
   const mf = new Miniflare(convertV4MiniflareOptions({
-    modules: true, script, compatibilityDate, compatibilityFlags: JSON.parse(flags), bindings: BINDINGS,
+    modules: true, script, compatibilityDate, compatibilityFlags: JSON.parse(flags), bindings: { ...BINDINGS, ...overrides },
     durableObjects: {
       BOT: { className: 'TestDiscordBot', useSQLite: true },
       VOICEVOX: { className: 'TestVoicevox', useSQLite: true },
@@ -231,6 +237,42 @@ async function until(read: () => Promise<any>, predicate: (value: any) => boolea
 const rows = (state: any) => (state.tables.voice_interaction_jobs ?? [])
   .toSorted((a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id));
 const jobs = (state: any) => state.fixture.schedules.filter((item: any) => item.method === 'runCommandJob');
+
+test('installed-guild workerd routing keeps signed guild scopes and global daily usage isolated', async () => {
+  const f = await runtime(await bundle(), { DISCORD_SCOPE_MODE: 'installed-guilds', VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '', VOICE_SESSION_MINUTES: '480' });
+  const dynamic = (n: number, name: string, guild = '100000000000000012', channel = '100000000000000013') => ({
+    ...payload(n, name), guild_id: guild, channel_id: channel, channel: { id: channel, type: 0 }, context: 0,
+    member: { user: { id: scope.DISCORD_OWNER_ID }, permissions: String((1n << 10n) | (1n << 31n)) },
+    app_permissions: String(1n << 10n), authorizing_integration_owners: { '0': guild },
+  });
+  try {
+    const response = await f.mf.dispatchFetch('https://offline.test/interactions', await signed(dynamic(2, 'join')));
+    assert.equal((await response.json() as any).type, 5);
+    await until(f.inspect, state => jobs(state).length === 1);
+    await f.admin('run', { id: snowflake(2) });
+    const active = await f.inspect();
+    assert.equal(active.session.status, 'ready'); assert.equal(active.fixture.starts, 1);
+    assert.deepEqual(active.session.scope, { applicationId: scope.DISCORD_APPLICATION_ID, userId: scope.DISCORD_OWNER_ID,
+      guildId: '100000000000000012', channelId: '100000000000000013' });
+    const initialReplies = f.outbound.length;
+    for (const [i, name] of ['join', 'stop', 'leave', 'say', 'voice-status'].entries()) {
+      const reply = await f.mf.dispatchFetch('https://offline.test/interactions', await signed(dynamic(10 + i, name, '100000000000000022', '100000000000000023')));
+      assert.equal((await reply.json() as any).type, 5);
+    }
+    await until(async () => f.outbound.length, count => count === initialReplies + 5);
+    const after = await f.inspect();
+    assert.deepEqual(after.session, active.session);
+    assert.deepEqual(after.tables.voice_usage_days, active.tables.voice_usage_days);
+    assert.deepEqual(after.tables.voice_usage_reservation, active.tables.voice_usage_reservation);
+    assert.deepEqual(after.tables.voice_scope_control, active.tables.voice_scope_control);
+    assert.equal(after.fixture.starts, 1); assert.equal(after.fixture.destroys, active.fixture.destroys);
+    assert.deepEqual(after.fixture.commands, active.fixture.commands);
+    assert.ok(f.outbound.slice(initialReplies).every(call => (call.body as any).content.includes('別のチャンネル')));
+    const forbidden = { ...dynamic(30, 'join'), authorizing_integration_owners: { '1': scope.DISCORD_OWNER_ID } };
+    assert.equal((await (await f.mf.dispatchFetch('https://offline.test/interactions', await signed(forbidden))).json() as any).type, 4);
+    assert.equal((await f.inspect()).ingressLookups, after.ingressLookups);
+  } finally { await f.mf.dispose(); }
+});
 
 test('production interactions use real workerd Ed25519, SQLite and intercepted outbound fetch', async t => {
   const script = await bundle();
@@ -290,6 +332,34 @@ test('production interactions use real workerd Ed25519, SQLite and intercepted o
       assert.deepEqual((f.outbound[0].body as any).allowed_mentions, { parse: [] });
       assert.equal('token' in complete.fixture.commands[0], false);
       assert.equal(await f.admin('take', { id: snowflake(2) }), null, 'a fresh ledger cannot reclaim executed SQL metadata');
+    } finally { await f.mf.dispose(); }
+  });
+
+  await t.test('cold join progress edits the same ephemeral original reply without changing admission or durable payloads', async () => {
+    const f = await runtime(script);
+    try {
+      const response = await f.mf.dispatchFetch('https://offline.test/interactions', await signed(payload(2, 'join')));
+      assert.deepEqual(await response.json(), { type: 5, data: { flags: 64 } });
+      const accepted = await until(f.inspect, state => jobs(state).length === 1);
+      assert.equal(accepted.fixture.starts, 0); assert.deepEqual(f.outbound, []);
+      await f.admin('run', { id: snowflake(2) });
+      await f.admin('run', { id: snowflake(2) });
+      const complete = await f.inspect();
+      assert.equal(complete.fixture.starts, 1);
+      assert.deepEqual(complete.fixture.commands.map((command: any) => command.name), ['join']);
+      assert.equal(complete.session.status, 'ready');
+      assert.equal(rows(complete)[0].state, 'complete'); assert.equal(rows(complete)[0].cipher, null);
+      assert.doesNotMatch(JSON.stringify(complete.tables), new RegExp(`${TOKEN}|${SECRET}`));
+      assert.deepEqual(f.outbound.map(call => (call.body as any).content), [
+        'Botを起動しています。接続の準備中です',
+        'Botに接続しました。ボイスチャンネルへ接続中です',
+        '合成確認用応答',
+      ]);
+      for (const call of f.outbound) {
+        assert.equal(call.url, `https://discord.com/api/v10/webhooks/${scope.DISCORD_APPLICATION_ID}/${TOKEN}/messages/@original`);
+        assert.equal(call.method, 'PATCH'); assert.equal(call.authorization, null);
+        assert.deepEqual((call.body as any).allowed_mentions, { parse: [] });
+      }
     } finally { await f.mf.dispose(); }
   });
 
@@ -406,4 +476,36 @@ test('production interactions use real workerd Ed25519, SQLite and intercepted o
       assert.equal(first.cipher, replay.cipher);
     } finally { await f.mf.dispose(); }
   });
+});
+
+test('daily admission cumulatively caps repeated explicit sessions using real workerd SQLite', async () => {
+  const f = await runtime(await bundle(), { VOICE_USAGE_MODE: 'daily', VOICE_DEADLINE: '', VOICE_SESSION_MINUTES: '480' });
+  try {
+    for (const [n, elapsed] of [[2, 0], [3, 4 * 60 * 60_000], [4, 8 * 60 * 60_000]]) {
+      const now = NOW + elapsed;
+      await f.admin('clock', { now });
+      const request = await signed(payload(n, 'join'), String(now / 1000));
+      const responses = await Promise.all([f.mf.dispatchFetch('https://offline.test/interactions', request),
+        f.mf.dispatchFetch('https://offline.test/interactions', request)]);
+      for (const response of responses) assert.deepEqual(await response.json(), { type: 5, data: { flags: 64 } });
+      await until(f.inspect, state => state.ingressLookups === (n - 1) * 2);
+      if (n < 4) {
+        const state = await until(f.inspect, state => jobs(state).length === n - 1);
+        assert.equal(state.tables.voice_usage_days[0].charged_ms, 8 * 60 * 60_000);
+        assert.equal(state.fixture.starts, n - 2, 'budget debit exists before external startup');
+        await f.admin('run', { id: snowflake(n) });
+        assert.equal((await f.inspect()).session.status, 'ready');
+        await f.admin('clock', { now: now + 4 * 60 * 60_000 });
+        await f.admin('end-session');
+        assert.equal((await f.inspect()).tables.voice_usage_reservation[0].state, 'settled');
+      } else {
+        await until(f.inspect, state => state.ingressLookups === 6 && f.outbound.length >= 4);
+        const state = await f.inspect();
+        assert.equal(state.fixture.starts, 2); assert.equal(state.running, false);
+        assert.equal(state.tables.voice_usage_days[0].charged_ms, 8 * 60 * 60_000);
+        assert.equal(jobs(state).length, 2);
+        assert.match(JSON.stringify(f.outbound.at(-1)?.body), /8時間/);
+      }
+    }
+  } finally { await f.mf.dispose(); }
 });

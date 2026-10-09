@@ -1,4 +1,5 @@
-import { scopeFingerprint, APPROVED_SCOPE_FINGERPRINT } from './guild-setup.ts';
+import { APPROVED_SCOPE_FINGERPRINT } from './guild-setup.ts';
+import { commandScopeAllowed, installedScope, scopePolicyActive, APPROVED_PRINCIPAL } from './scope-policy.ts';
 
 export const COMMAND_NAMES = ['join', 'leave', 'stop', 'voice-status', 'say', 'model'] as const;
 export type CommandName = typeof COMMAND_NAMES[number];
@@ -15,8 +16,10 @@ export interface InteractionCommand {
   token: string;
   receivedAt: number;
   bodyHash: string;
+  guildInstallId?: string; channelType?: number; memberPermissions?: string; appPermissions?: string;
 }
 export interface InteractionEnv {
+  DISCORD_SCOPE_MODE?: string;
   DISCORD_HTTP_ENABLED: string;
   DISCORD_PUBLIC_KEY: string;
   DISCORD_APPLICATION_ID: string;
@@ -35,7 +38,7 @@ const reply = (content: string): Response => Response.json({ type: 4, data: { co
 export async function receiveInteraction(request: Request, env: InteractionEnv,
   enqueue: (command: InteractionCommand) => Promise<void>, waitUntil: (work: Promise<void>) => void,
   active: () => boolean, now: () => number = Date.now,
-  approvedFingerprint: string = APPROVED_SCOPE_FINGERPRINT): Promise<Response> {
+  approvedFingerprint: string = APPROVED_SCOPE_FINGERPRINT, approvedPrincipal: string = APPROVED_PRINCIPAL): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname !== '/interactions' || url.search) return new Response(null, { status: 404, headers });
   if (request.method !== 'POST') return new Response(null, { status: 405, headers: { ...headers, allow: 'POST' } });
@@ -90,9 +93,19 @@ export async function receiveInteraction(request: Request, env: InteractionEnv,
   const channelId = object(payload.channel) ? payload.channel.id : payload.channel_id;
   if (payload.channel_id !== undefined && payload.channel_id !== channelId) return reply('操作先を確認できません');
   const member = payload.member;
-  if (scopeFingerprint(env) !== approvedFingerprint || payload.guild_id !== env.DISCORD_GUILD_ID || channelId !== env.DISCORD_TEXT_CHANNEL_ID ||
-      !object(member) || !object(member.user) || member.user.id !== env.DISCORD_OWNER_ID || payload.user !== undefined ||
-      (payload.context !== undefined && payload.context !== 0)) return reply('この操作は指定チャンネルの管理者のみ利用できます');
+  if (!scopePolicyActive(env, approvedFingerprint, approvedPrincipal) || !object(member) || !object(member.user) ||
+      member.user.id !== env.DISCORD_OWNER_ID || payload.user !== undefined ||
+      (installedScope(env) ? payload.context !== 0 : payload.context !== undefined && payload.context !== 0)) return reply('この操作はオーナーのみ利用できます');
+  if (installedScope(env) && object(payload.authorizing_integration_owners) && Object.hasOwn(payload.authorizing_integration_owners, '1')) return reply('サーバーにインストールされたBotから利用してください');
+  const scope = {
+    applicationId: env.DISCORD_APPLICATION_ID, guildId: payload.guild_id as string, channelId: channelId as string, userId: member.user.id as string,
+    ...(installedScope(env) ? {
+      guildInstallId: object(payload.authorizing_integration_owners) ? payload.authorizing_integration_owners['0'] as string : undefined,
+      channelType: object(payload.channel) ? payload.channel.type as number : undefined,
+      memberPermissions: member.permissions as string, appPermissions: payload.app_permissions as string,
+    } : {}),
+  };
+  if (!commandScopeAllowed(scope, env)) return reply('このチャンネルでのインストール状態または利用権限を確認できません');
   let text: string | undefined;
   let speakerId: number | undefined;
   let page: number | undefined;
@@ -116,8 +129,7 @@ export async function receiveInteraction(request: Request, env: InteractionEnv,
   if (payload.data.name !== 'model' && !active()) return reply('現在は停止中です');
   const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', raw)), b => b.toString(16).padStart(2, '0')).join('');
   const command: InteractionCommand = {
-    id: payload.id, applicationId: env.DISCORD_APPLICATION_ID, guildId: env.DISCORD_GUILD_ID,
-    channelId: env.DISCORD_TEXT_CHANNEL_ID, userId: env.DISCORD_OWNER_ID,
+    id: payload.id, ...scope,
     name: payload.data.name as CommandName, ...(text === undefined ? {} : { text }),
     ...(speakerId === undefined ? {} : { speakerId }), ...(page === undefined ? {} : { page }), token: payload.token, receivedAt: now(), bodyHash: hash,
   };
