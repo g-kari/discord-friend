@@ -1,6 +1,6 @@
 # Site settings
-title: "Discord AI Voice Bot"
-description: "日本語対応のDiscord AIボイスボット - Go実装"
+title: "Discord Friend"
+description: "Discord向け共通音声読み上げサービス"
 baseurl: "/discord-friend"
 url: "https://g-kari.github.io"
 
