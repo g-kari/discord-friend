@@ -1,6 +1,6 @@
 # GitHub Pages Documentation
 
-This directory contains the documentation site for the Discord AI Voice Bot project, built with Jekyll and hosted on GitHub Pages.
+This directory contains the documentation site for the Discord Friend project, built with Jekyll and hosted on GitHub Pages.
 
 ## 🌐 Live Site
 
@@ -26,6 +26,8 @@ docs/
 To run the documentation site locally:
 
 ```bash
+cd docs
+
 # Install dependencies
 bundle install
 
