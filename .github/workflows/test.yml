@@ -30,7 +30,7 @@ jobs:
         test-suite: [core, audio, agents, integration]
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       
     - name: Set up Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v5
@@ -178,7 +178,7 @@ except Exception as e:
     name: Legacy Test Support  
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
