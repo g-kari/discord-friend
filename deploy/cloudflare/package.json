@@ -8,7 +8,7 @@
   "devDependencies": {
     "@types/node": "24.19.2",
     "typescript": "5.9.3",
-    "wrangler": "4.159.0"
+    "wrangler": "4.160.0"
   },
   "scripts": {
     "types": "wrangler types",
