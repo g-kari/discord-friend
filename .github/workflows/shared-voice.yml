@@ -16,7 +16,7 @@ jobs:
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24.22.2'
       - run: npm ci --ignore-scripts && npm test && npm run check && npm audit --audit-level=high
@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24.22.2'
       - name: Build private synthesis image
