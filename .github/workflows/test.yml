@@ -167,7 +167,7 @@ except Exception as e:
         
     - name: Upload coverage to Codecov
       if: matrix.test-suite == 'core'
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v7
       with:
         file: test-reports/coverage-core.xml
         flags: core-tests
