@@ -1,4 +1,4 @@
-FROM node:24.22.2-bookworm-slim AS node
+FROM node:24.22.3-bookworm-slim AS node
 FROM voicevox/voicevox_engine:cpu-0.25.2
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY apps/voice/src /app/src
