@@ -89,7 +89,7 @@ services:
 
   # Redis - Caching and Session Management
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: discord-bot-redis
     restart: unless-stopped
     ports:
