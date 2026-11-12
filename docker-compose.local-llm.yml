@@ -113,7 +113,7 @@ services:
 
   # PostgreSQL - Robust Data Storage
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: discord-bot-postgres
     restart: unless-stopped
     environment:
