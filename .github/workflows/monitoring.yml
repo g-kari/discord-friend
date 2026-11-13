@@ -161,7 +161,7 @@ analyze_security_results()
 "
 
     - name: Upload security reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: always()
       with:
         name: security-monitoring-${{ github.sha }}
@@ -299,7 +299,7 @@ analyze_dependencies()
 "
 
     - name: Upload dependency reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: always()
       with:
         name: dependency-monitoring-${{ github.sha }}
@@ -518,7 +518,7 @@ run_health_checks()
 "
 
     - name: Upload health reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: always()
       with:
         name: health-monitoring-${{ github.sha }}
@@ -533,7 +533,7 @@ run_health_checks()
     
     steps:
     - name: Download all monitoring reports
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         pattern: "*-monitoring-*"
         merge-multiple: true
@@ -664,7 +664,7 @@ if status == 'CRITICAL':
           }
 
     - name: Upload comprehensive monitoring summary
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: always()
       with:
         name: comprehensive-monitoring-summary
