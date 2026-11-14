@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '24.22.3'
+          node-version: '26.13.1'
       - run: npm ci --ignore-scripts && npm test && npm run check && npm audit --audit-level=high
         working-directory: apps/voice
       - run: npm ci --ignore-scripts && npm run types && npm run check && npm test && npm audit --audit-level=high
@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '24.22.3'
+          node-version: '26.13.1'
       - name: Build private synthesis image
         run: docker build -f apps/voice/Dockerfile.tts -t voice-tts-test .
       - name: Record image layer size without starting another container
